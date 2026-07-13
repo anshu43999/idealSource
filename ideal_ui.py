@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -164,9 +165,16 @@ def read_proxy_text(path_value: str) -> str:
 
 
 def write_text_atomic(path: Path, text: str) -> None:
+    # Docker bind mounts put the target on a different filesystem than
+    # the temp file, so os.replace() fails with EXDEV/EBUSY.  Fall back
+    # to copy+unlink when atomic rename is not possible.
     temp_path = path.with_name(f".{path.name}.tmp")
     temp_path.write_text(text, encoding="utf-8")
-    os.replace(temp_path, path)
+    try:
+        os.replace(temp_path, path)
+    except OSError:
+        shutil.copy2(temp_path, path)
+        temp_path.unlink()
 
 
 def migrate_legacy_proxy_seeds() -> Path | None:

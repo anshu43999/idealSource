@@ -15,8 +15,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 RUN mkdir -p blik/logs kakao/logs pix/logs twint/logs upi/logs logs
 
 EXPOSE 8060
 
-CMD ["python", "ideal_ui.py", "--host", "0.0.0.0", "--port", "8060", "--no-open"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
