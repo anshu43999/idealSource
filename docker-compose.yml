@@ -13,6 +13,7 @@ services:
     volumes:
       - ./nl_proxy_seeds.txt:/app/nl_proxy_seeds.txt
       - ./vn_proxy_seeds.txt:/app/vn_proxy_seeds.txt
+      - ./token.txt:/app/token.txt
       - ./pix/br_proxy_seeds.txt:/app/pix/br_proxy_seeds.txt
       - ./pix/vn_proxy_seeds.txt:/app/pix/vn_proxy_seeds.txt
       - ./twint/ch_proxy_seeds.txt:/app/twint/ch_proxy_seeds.txt
@@ -24,6 +25,7 @@ services:
       - ./kakao/token.txt:/app/kakao/token.txt
       - ./upi/proxy_seeds.txt:/app/upi/proxy_seeds.txt
       - ./upi/token.txt:/app/upi/token.txt
+      - ./blik/proxy_seeds.txt:/app/blik/proxy_seeds.txt
       - ./blik/token.txt:/app/blik/token.txt
       - ./pix/token.txt:/app/pix/token.txt
       - ./twint/token.txt:/app/twint/token.txt
