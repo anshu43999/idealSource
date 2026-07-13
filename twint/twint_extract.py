@@ -855,14 +855,7 @@ def provider_proxy_file() -> Path:
 
 
 def manual_proxy_mode_enabled() -> bool:
-    return any(
-        os.environ.get(name, "").strip()
-        for name in (
-            "TWINT_CHECKOUT_PROXY_FILE",
-            "TWINT_PROMOTION_PROXY_FILE",
-            "TWINT_PROVIDER_PROXY_FILE",
-        )
-    )
+    return True
 
 
 def file_containing_proxy(paths: list[Path], proxy: str) -> Path:
