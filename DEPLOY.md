@@ -42,7 +42,7 @@ http://5652965-c7a22eec:3a9089c8-country=KR-93675085@gate.kookeey.info:1000
 ### 2.2 Token 文件（按需配置）
 
 ```bash
-touch kakao/token.txt upi/token.txt blik/token.txt pix/token.txt twint/token.txt
+touch token.txt kakao/token.txt upi/token.txt blik/token.txt pix/token.txt twint/token.txt
 ```
 
 如果有固定 token，直接写入对应文件。大多数情况下 token 通过 UI 页面设置，文件保持空即可。

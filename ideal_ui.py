@@ -142,40 +142,43 @@ def resolve_payment_method(payload: dict[str, Any]) -> tuple[str, dict[str, Any]
     return method_id, method
 
 
+def storage_file_path(path: Path) -> Path:
+    """Use a writable file inside accidental Docker directory bind mounts."""
+    return path / path.name if path.is_dir() else path
+
+
 def payment_storage_paths(payment_method: str) -> tuple[Path, Path]:
     if payment_method == "blik":
-        return BLIK_PROXY_SEED_PATH, BLIK_TOKEN_PATH
-    if payment_method == "kakao_pay":
-        return KAKAO_KR_PROXY_SEED_PATH, KAKAO_TOKEN_PATH
-    if payment_method == "pix":
-        return PIX_PRIMARY_PROXY_SEED_PATH, PIX_TOKEN_PATH
-    if payment_method == "twint":
-        return TWINT_PRIMARY_PROXY_SEED_PATH, TWINT_TOKEN_PATH
-    if payment_method == "upi":
-        return UPI_PRIMARY_PROXY_SEED_PATH, UPI_TOKEN_PATH
-    if payment_method == "ideal":
-        return IDEAL_PRIMARY_PROXY_SEED_PATH, TOKEN_PATH
-    if payment_method == "pix":
-        return PIX_PROXY_SEED_PATH, PIX_TOKEN_PATH
-    if payment_method == "twint":
-        return TWINT_PROXY_SEED_PATH, TWINT_TOKEN_PATH
-    if payment_method == "upi":
-        return UPI_PROXY_SEED_PATH, UPI_TOKEN_PATH
-    return PROXY_SEED_PATH, TOKEN_PATH
+        paths = BLIK_PROXY_SEED_PATH, BLIK_TOKEN_PATH
+    elif payment_method == "kakao_pay":
+        paths = KAKAO_KR_PROXY_SEED_PATH, KAKAO_TOKEN_PATH
+    elif payment_method == "pix":
+        paths = PIX_PRIMARY_PROXY_SEED_PATH, PIX_TOKEN_PATH
+    elif payment_method == "twint":
+        paths = TWINT_PRIMARY_PROXY_SEED_PATH, TWINT_TOKEN_PATH
+    elif payment_method == "upi":
+        paths = UPI_PRIMARY_PROXY_SEED_PATH, UPI_TOKEN_PATH
+    elif payment_method == "ideal":
+        paths = IDEAL_PRIMARY_PROXY_SEED_PATH, TOKEN_PATH
+    else:
+        paths = PROXY_SEED_PATH, TOKEN_PATH
+    return storage_file_path(paths[0]), storage_file_path(paths[1])
 
 
 def manual_proxy_paths(payment_method: str) -> tuple[Path, Path] | None:
     if payment_method == "ideal":
-        return IDEAL_PRIMARY_PROXY_SEED_PATH, IDEAL_PROMOTION_PROXY_SEED_PATH
-    if payment_method == "pix":
-        return PIX_PRIMARY_PROXY_SEED_PATH, PIX_PROMOTION_PROXY_SEED_PATH
-    if payment_method == "kakao_pay":
-        return KAKAO_KR_PROXY_SEED_PATH, KAKAO_VN_PROXY_SEED_PATH
-    if payment_method == "twint":
-        return TWINT_PRIMARY_PROXY_SEED_PATH, TWINT_PROMOTION_PROXY_SEED_PATH
-    if payment_method == "upi":
-        return UPI_PRIMARY_PROXY_SEED_PATH, UPI_PROMOTION_PROXY_SEED_PATH
-    return None
+        paths = IDEAL_PRIMARY_PROXY_SEED_PATH, IDEAL_PROMOTION_PROXY_SEED_PATH
+    elif payment_method == "pix":
+        paths = PIX_PRIMARY_PROXY_SEED_PATH, PIX_PROMOTION_PROXY_SEED_PATH
+    elif payment_method == "kakao_pay":
+        paths = KAKAO_KR_PROXY_SEED_PATH, KAKAO_VN_PROXY_SEED_PATH
+    elif payment_method == "twint":
+        paths = TWINT_PRIMARY_PROXY_SEED_PATH, TWINT_PROMOTION_PROXY_SEED_PATH
+    elif payment_method == "upi":
+        paths = UPI_PRIMARY_PROXY_SEED_PATH, UPI_PROMOTION_PROXY_SEED_PATH
+    else:
+        return None
+    return storage_file_path(paths[0]), storage_file_path(paths[1])
 
 
 def count_proxy_lines(path_value: str) -> int:
@@ -201,6 +204,7 @@ def write_text_atomic(path: Path, text: str) -> None:
     # Docker bind mounts put the target on a different filesystem than
     # the temp file, so os.replace() fails with EXDEV/EBUSY.  Fall back
     # to copy+unlink when atomic rename is not possible.
+    path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_name(f".{path.name}.tmp")
     temp_path.write_text(text, encoding="utf-8")
     try:
@@ -314,7 +318,7 @@ def prepare_persistent_files(payload: dict[str, Any], payment_method: str) -> tu
 
         token_text = clean_text(payload, "token", "", 30000)
         if token_text:
-            payment_storage_paths(payment_method)[1].write_text(token_text.rstrip() + "\n", encoding="utf-8")
+            write_text_atomic(payment_storage_paths(payment_method)[1], token_text.rstrip() + "\n")
 
         task_payload = dict(payload)
         task_payload["proxy_seed_file"] = str(primary_path)
@@ -347,7 +351,7 @@ def prepare_persistent_files(payload: dict[str, Any], payment_method: str) -> tu
             raise ValueError("请填写代理 Seed 池")
     token_text = clean_text(payload, "token", "", 30000)
     if token_text:
-        token_path.write_text(token_text.rstrip() + "\n", encoding="utf-8")
+        write_text_atomic(token_path, token_text.rstrip() + "\n")
 
     task_payload = dict(payload)
     task_payload["proxy_seed_file"] = str(proxy_seed_path)
@@ -824,24 +828,18 @@ def build_environment(
 
     token = clean_text(payload, "token", "", 30000)
     session_token = clean_text(payload, "session_token", "", 30000)
-    if token:
-        env["PP_TOKEN"] = token
-        if payment_method == "kakao_pay":
-            env["KAKAO_TOKEN"] = token
-        if payment_method == "pix":
-            env["PIX_TOKEN"] = token
-        if payment_method == "twint":
-            env["TWINT_TOKEN"] = token
-        if payment_method == "upi":
-            env["UPI_TOKEN"] = token
-    else:
-        if not token_path.is_file():
-            raise ValueError("未填写Token，且项目中不存在 token.txt")
-        env.pop("PP_TOKEN", None)
-        env.pop("IDEAL_TOKEN", None)
-        env.pop("PIX_TOKEN", None)
-        env.pop("TWINT_TOKEN", None)
-        env.pop("UPI_TOKEN", None)
+    resolved_token = token or read_local_text(token_path)
+    if not resolved_token:
+        raise ValueError("未填写Token，且当前支付方式不存在可用的 token.txt")
+    env["PP_TOKEN"] = resolved_token
+    if payment_method == "kakao_pay":
+        env["KAKAO_TOKEN"] = resolved_token
+    if payment_method == "pix":
+        env["PIX_TOKEN"] = resolved_token
+    if payment_method == "twint":
+        env["TWINT_TOKEN"] = resolved_token
+    if payment_method == "upi":
+        env["UPI_TOKEN"] = resolved_token
     if session_token:
         env["PP_SESSION_TOKEN"] = session_token
     else:
@@ -896,14 +894,15 @@ class ScriptRunner:
         self.proxy_text_versions: dict[str, int] = {
             "seed": 1 if self.proxy_texts["seed"] else 0,
         }
-        self.token_text = read_local_text(TOKEN_PATH)
+        _, initial_token_path = payment_storage_paths("ideal")
+        self.token_text = read_local_text(initial_token_path)
         self.token_text_version = 1 if self.token_text else 0
         self.last_config: dict[str, Any] = {
             "payment_method": "ideal",
             "payment_label": PAYMENT_METHODS["ideal"]["label"],
             "payment_flow": PAYMENT_METHODS["ideal"]["flow"],
             "proxy_seed_file": str(PROXY_SEED_PATH),
-            "token_file": str(TOKEN_PATH),
+            "token_file": str(initial_token_path),
         }
 
     def _append_locked(self, line: str) -> None:
