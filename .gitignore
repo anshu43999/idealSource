@@ -11,6 +11,10 @@ __pycache__/
 # Credentials and proxy pools
 proxy_seeds.txt
 */proxy_seeds.txt
+kr_proxy_seeds.txt
+vn_proxy_seeds.txt
+*/kr_proxy_seeds.txt
+*/vn_proxy_seeds.txt
 token.txt
 */token.txt
 proxy_state.json

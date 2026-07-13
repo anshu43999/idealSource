@@ -7,3 +7,6 @@ logs/
 *.md
 .env
 proxy_state.json
+proxy_seeds.txt
+*_proxy_seeds.txt
+token.txt

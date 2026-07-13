@@ -30,6 +30,8 @@ BLIK_TOKEN_PATH = BLIK_DIR / "token.txt"
 KAKAO_DIR = ROOT / "kakao"
 KAKAO_SCRIPT_PATH = KAKAO_DIR / "kakao_extract.py"
 KAKAO_PROXY_SEED_PATH = KAKAO_DIR / "proxy_seeds.txt"
+KAKAO_KR_PROXY_SEED_PATH = KAKAO_DIR / "kr_proxy_seeds.txt"
+KAKAO_VN_PROXY_SEED_PATH = KAKAO_DIR / "vn_proxy_seeds.txt"
 KAKAO_TOKEN_PATH = KAKAO_DIR / "token.txt"
 PIX_DIR = ROOT / "pix"
 PIX_SCRIPT_PATH = PIX_DIR / "pix_extract.py"
@@ -135,7 +137,7 @@ def payment_storage_paths(payment_method: str) -> tuple[Path, Path]:
     if payment_method == "blik":
         return BLIK_PROXY_SEED_PATH, BLIK_TOKEN_PATH
     if payment_method == "kakao_pay":
-        return KAKAO_PROXY_SEED_PATH, KAKAO_TOKEN_PATH
+        return KAKAO_KR_PROXY_SEED_PATH, KAKAO_TOKEN_PATH
     if payment_method == "pix":
         return PIX_PROXY_SEED_PATH, PIX_TOKEN_PATH
     if payment_method == "twint":
@@ -250,6 +252,45 @@ def resolve_proxy_file(value: str, label: str) -> str:
 
 
 def prepare_persistent_files(payload: dict[str, Any], payment_method: str) -> tuple[dict[str, Any], int]:
+    if payment_method == "kakao_pay":
+        kr_text = clean_text(payload, "kakao_kr_proxies", "", 400_000)
+        vn_text = clean_text(payload, "kakao_vn_proxies", "", 400_000)
+        kr_count = count_proxy_text(kr_text)
+        vn_count = count_proxy_text(vn_text)
+        if kr_count:
+            write_text_atomic(KAKAO_KR_PROXY_SEED_PATH, kr_text.rstrip() + "\n")
+        else:
+            kr_count = count_proxy_lines(str(KAKAO_KR_PROXY_SEED_PATH))
+            if not kr_count:
+                raise ValueError("请填写 Kakao KR 代理")
+        if vn_count:
+            write_text_atomic(KAKAO_VN_PROXY_SEED_PATH, vn_text.rstrip() + "\n")
+        else:
+            vn_count = count_proxy_lines(str(KAKAO_VN_PROXY_SEED_PATH))
+            if not vn_count:
+                raise ValueError("请填写 Kakao VN 代理")
+
+        token_text = clean_text(payload, "token", "", 30000)
+        if token_text:
+            KAKAO_TOKEN_PATH.write_text(token_text.rstrip() + "\n", encoding="utf-8")
+
+        task_payload = dict(payload)
+        task_payload["proxy_seed_file"] = str(KAKAO_KR_PROXY_SEED_PATH)
+        task_payload["kakao_checkout_proxy_file"] = str(KAKAO_KR_PROXY_SEED_PATH)
+        task_payload["kakao_provider_proxy_file"] = str(KAKAO_KR_PROXY_SEED_PATH)
+        task_payload["kakao_promotion_proxy_file"] = str(KAKAO_VN_PROXY_SEED_PATH)
+        task_payload["token_file"] = str(KAKAO_TOKEN_PATH)
+        for name in (
+            "checkout_proxies",
+            "promotion_proxies",
+            "provider_proxies",
+            "checkout_file",
+            "promotion_file",
+            "provider_file",
+        ):
+            task_payload.pop(name, None)
+        return task_payload, kr_count + vn_count
+
     seed_text = clean_text(payload, "proxy_seeds", "", 400_000)
     seed_count = count_proxy_text(seed_text)
     proxy_seed_path, token_path = payment_storage_paths(payment_method)
@@ -292,6 +333,9 @@ def build_environment(
         clean_text(payload, "proxy_seed_file", str(default_proxy_seed_path)),
         "代理 Seed 文件",
     )
+    kakao_checkout_proxy_file = ""
+    kakao_promotion_proxy_file = ""
+    kakao_provider_proxy_file = ""
     default_chain = PAYMENT_CHAIN_DEFAULTS.get(payment_method)
     if default_chain:
         bootstrap_country = clean_country_code(payload, "bootstrap_country", default_chain[0])
@@ -327,6 +371,21 @@ def build_environment(
         raise ValueError("优惠模式不正确")
     if payment_method == "kakao_pay" and promo_mode not in {"campaign", "off"}:
         raise ValueError("Kakao 当前仅支持 campaign 或 off 优惠模式")
+    if payment_method == "kakao_pay":
+        if bootstrap_country != provider_country:
+            raise ValueError("Kakao 手动代理模式要求第一段和第三段国家一致")
+        kakao_checkout_proxy_file = resolve_proxy_file(
+            clean_text(payload, "kakao_checkout_proxy_file", str(KAKAO_KR_PROXY_SEED_PATH)),
+            "Kakao KR 代理文件",
+        )
+        kakao_provider_proxy_file = resolve_proxy_file(
+            clean_text(payload, "kakao_provider_proxy_file", kakao_checkout_proxy_file),
+            "Kakao Provider 代理文件",
+        )
+        kakao_promotion_proxy_file = resolve_proxy_file(
+            clean_text(payload, "kakao_promotion_proxy_file", str(KAKAO_VN_PROXY_SEED_PATH)),
+            "Kakao VN 代理文件",
+        )
     promo_id = clean_text(payload, "promo_id", "plus-1-month-free", 200)
     proxy_default_scheme = clean_text(payload, "proxy_default_scheme", "http", 20).lower()
     if proxy_default_scheme not in {"http", "socks5h"}:
@@ -342,6 +401,9 @@ def build_environment(
         "PP_PROVIDER_PROXY_FILE",
         "KAKAO_TOKEN",
         "KAKAO_PROXY_SEED_FILE",
+        "KAKAO_CHECKOUT_PROXY_FILE",
+        "KAKAO_PROMOTION_PROXY_FILE",
+        "KAKAO_PROVIDER_PROXY_FILE",
         "KAKAO_PROXY_DEFAULT_SCHEME",
         "KAKAO_SEEDS_PER_ROUND",
         "KAKAO_MAX_RETRY",
@@ -539,6 +601,9 @@ def build_environment(
         env.update(
             {
                 "KAKAO_PROXY_SEED_FILE": proxy_seed_file,
+                "KAKAO_CHECKOUT_PROXY_FILE": kakao_checkout_proxy_file,
+                "KAKAO_PROMOTION_PROXY_FILE": kakao_promotion_proxy_file,
+                "KAKAO_PROVIDER_PROXY_FILE": kakao_provider_proxy_file,
                 "KAKAO_PROXY_DEFAULT_SCHEME": proxy_default_scheme,
                 "KAKAO_SEEDS_PER_ROUND": str(batch_size),
                 "KAKAO_MAX_RETRY": str(max_batches),
@@ -915,8 +980,11 @@ class ScriptRunner:
             payment_storage: dict[str, dict[str, Any]] = {}
             for method_id in ("ideal", "pix", "blik", "kakao_pay", "twint", "upi"):
                 method_proxy_file, method_token_file = payment_storage_paths(method_id)
+                proxy_count = count_proxy_lines(str(method_proxy_file))
+                if method_id == "kakao_pay":
+                    proxy_count += count_proxy_lines(str(KAKAO_VN_PROXY_SEED_PATH))
                 payment_storage[method_id] = {
-                    "proxy_count": count_proxy_lines(str(method_proxy_file)),
+                    "proxy_count": proxy_count,
                     "token_file": method_token_file.is_file(),
                 }
             public_config = {
@@ -1006,13 +1074,15 @@ class UIHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "支付方式不受支持"}, HTTPStatus.BAD_REQUEST)
                 return
             proxy_seed_path, token_path = payment_storage_paths(method_id)
-            self._send_json(
-                {
-                    "payment_method": method_id,
-                    "proxy_seeds": read_local_text(proxy_seed_path),
-                    "token": read_local_text(token_path),
-                }
-            )
+            payload = {
+                "payment_method": method_id,
+                "proxy_seeds": read_local_text(proxy_seed_path),
+                "token": read_local_text(token_path),
+            }
+            if method_id == "kakao_pay":
+                payload["kakao_kr_proxies"] = read_local_text(KAKAO_KR_PROXY_SEED_PATH)
+                payload["kakao_vn_proxies"] = read_local_text(KAKAO_VN_PROXY_SEED_PATH)
+            self._send_json(payload)
             return
         self._send_json({"error": "Not found"}, HTTPStatus.NOT_FOUND)
 

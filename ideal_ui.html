@@ -695,10 +695,20 @@
           </div>
           <div class="card-body">
             <div class="form-grid">
-              <div class="field full">
+              <div class="field full" id="proxySeedsField">
                 <label for="proxySeeds">代理 Seed 池</label>
                 <textarea class="proxy-input" id="proxySeeds" name="proxy_seeds" placeholder="粘贴 sticky 代理 seed，每行一条" spellcheck="false" autocomplete="off"></textarea>
                 <span class="hint" id="proxySeedsHint">点击启动后保存到 proxy_seeds.txt。每轮只取一个 seed：NL checkout/Stripe init → VN checkout/update → NL Stripe refresh/tax/iDEAL/approve；本次失败的 seed 不会再次抽取。</span>
+              </div>
+              <div class="field full" id="kakaoKrProxyField" hidden>
+                <label for="kakaoKrProxies">Kakao KR 代理</label>
+                <textarea class="proxy-input" id="kakaoKrProxies" name="kakao_kr_proxies" placeholder="每行一条 KR 代理，例如 5652965-c7a22eec:3a9089c8-KR-62301914@gate.kookeey.info:1000" spellcheck="false" autocomplete="off"></textarea>
+                <span class="hint" id="kakaoKrProxyHint">用于 Kakao 的 checkout、Bootstrap Stripe init、Stripe refresh、taxes、approve。</span>
+              </div>
+              <div class="field full" id="kakaoVnProxyField" hidden>
+                <label for="kakaoVnProxies">Kakao VN 代理</label>
+                <textarea class="proxy-input" id="kakaoVnProxies" name="kakao_vn_proxies" placeholder="每行一条 VN 代理，例如 5652965-c7a22eec:3a9089c8-VN-62301914@gate.kookeey.info:1000" spellcheck="false" autocomplete="off"></textarea>
+                <span class="hint" id="kakaoVnProxyHint">只用于 Kakao 的 checkout/update 阶段，不再自动改写 country/region。</span>
               </div>
               <div class="field full" id="preProxyField">
                 <label for="preProxy">本机前置代理</label>
@@ -809,7 +819,7 @@
         </div>
 
         <div class="stats">
-          <div class="stat"><span class="stat-label">Seed代理</span><span class="stat-value" id="seedCount">--</span></div>
+          <div class="stat"><span class="stat-label" id="seedCountLabel">Seed代理</span><span class="stat-value" id="seedCount">--</span></div>
           <div class="stat"><span class="stat-label">派生链路</span><span class="stat-value" id="chainValue">NL/VN/NL</span></div>
           <div class="stat"><span class="stat-label">运行时间</span><span class="stat-value" id="elapsedValue">00:00</span></div>
         </div>
@@ -874,6 +884,11 @@
     const copyButton = document.getElementById('copyButton');
     const tokenField = document.getElementById('token');
     const proxySeeds = document.getElementById('proxySeeds');
+    const proxySeedsField = document.getElementById('proxySeedsField');
+    const kakaoKrProxyField = document.getElementById('kakaoKrProxyField');
+    const kakaoVnProxyField = document.getElementById('kakaoVnProxyField');
+    const kakaoKrProxies = document.getElementById('kakaoKrProxies');
+    const kakaoVnProxies = document.getElementById('kakaoVnProxies');
     const paymentMethodInput = document.getElementById('paymentMethod');
     const paymentMethodsBox = document.getElementById('paymentMethods');
     const paymentMethodHint = document.getElementById('paymentMethodHint');
@@ -924,7 +939,7 @@
       const isBLIK = paymentMethodInput.value === 'blik';
       const isKakao = paymentMethodInput.value === 'kakao_pay';
       document.getElementById('attemptPreview').textContent = isKakao
-        ? `最多完整链路 ${checkoutRetry * idealRetry} 次（每轮 ${checkoutRetry} 个 Seed × ${idealRetry} 轮）`
+        ? `最多完整链路 ${checkoutRetry * idealRetry} 次（每轮 ${checkoutRetry} 组 KR/VN 代理 × ${idealRetry} 轮）`
         : `${isBLIK ? '总提交' : '总提链'} ${idealRetry} 次，每轮最多 ${checkoutRetry} 个 seed`;
     }
 
@@ -1065,10 +1080,15 @@
       updateResultCopy();
       blikCodeField.hidden = !isBLIK;
       bankField.hidden = isBLIK || isKakao || isPix || isTwint || isUpi;
+      proxySeedsField.hidden = isKakao;
+      kakaoKrProxyField.hidden = !isKakao;
+      kakaoVnProxyField.hidden = !isKakao;
       countryChainField.hidden = !isConfigurableChain;
       for (const input of [bootstrapCountryInput, promotionCountryInput, providerCountryInput]) {
         input.disabled = !isConfigurableChain;
       }
+      providerCountryInput.readOnly = isKakao;
+      if (isKakao) providerCountryInput.value = bootstrapCountryInput.value.trim().toUpperCase() || providerCountryInput.value;
       promotionCountryInput.maxLength = isPix ? 80 : 2;
       promotionCountryInput.pattern = isPix
         ? '[A-Za-z]{2}(\\s*,\\s*[A-Za-z]{2})*'
@@ -1081,7 +1101,7 @@
             : `${paymentLabel}：第一段用于 Checkout 与首次 Stripe init，第二段用于 checkout/update，第三段用于 Stripe refresh、税务、PM、confirm 与 approve。`;
       }
       document.getElementById('batchSizeLabel').textContent = isKakao
-        ? '每轮 Seed 尝试数'
+        ? '每轮代理尝试数'
         : '每轮 Seed候选';
       document.getElementById('batchSizeHint').textContent = isKakao
         ? '与重试轮数相乘，决定最多完整链路数'
@@ -1098,23 +1118,40 @@
         ? 'UPI总重试'
         : 'iDEAL总重试';
       document.getElementById('maxBatchesHint').textContent = isKakao
-        ? '成功后立即停止；每轮会按 Seed 尝试数计算完整链路上限'
+        ? '成功后立即停止；每轮会按 KR/VN 代理组合尝试数计算完整链路上限'
         : '成功后自动停止后续提链';
       document.getElementById('proxySectionDescription').textContent = isBLIK
         ? '只填写 sticky proxy seed，运行时派生 PL/PL/PL'
+        : isKakao
+        ? 'Kakao 改为手动填写 KR / VN 代理，不再自动改写 country'
         : `只填写 sticky proxy seed，运行时派生 ${chainFlow}`;
       proxySeeds.placeholder = isBLIK
         ? '粘贴 sticky 代理 seed，每行一条；脚本会自动改写 country/region 为 PL'
         : `粘贴 sticky 代理 seed，每行一条；脚本会自动改写 country/region 为 ${chain.bootstrap}、${chain.promotion}、${chain.provider}`;
       document.getElementById('proxySeedsHint').textContent = isBLIK
         ? '点击启动后保存到 BLIK 专用 proxy_seeds.txt。每条 Seed 固定派生：PL checkout → PL Stripe/BLIK → PL approve；本次失败的 Seed 不会再次抽取。'
-        : `点击启动后保存到 ${isKakao ? 'Kakao 专用 ' : isPix ? 'PIX 专用 ' : isTwint ? 'TWINT 专用 ' : isUpi ? 'UPI 专用 ' : ''}proxy_seeds.txt。每条 Seed 固定派生：${chain.bootstrap} checkout/Bootstrap Stripe init → ${chain.promotion} checkout/update → ${chain.provider} Stripe refresh/taxes/${paymentStageLabel}/approve；本次失败的 Seed 不会再次抽取。`;
+        : isKakao
+        ? 'Kakao 会分别保存 KR 与 VN 代理文件；checkout/provider 走 KR，checkout/update 走 VN，不再自动改写 country/region。'
+        : `点击启动后保存到 ${isPix ? 'PIX 专用 ' : isTwint ? 'TWINT 专用 ' : isUpi ? 'UPI 专用 ' : ''}proxy_seeds.txt。每条 Seed 固定派生：${chain.bootstrap} checkout/Bootstrap Stripe init → ${chain.promotion} checkout/update → ${chain.provider} Stripe refresh/taxes/${paymentStageLabel}/approve；本次失败的 Seed 不会再次抽取。`;
       document.getElementById('proxyChainValue').textContent = isBLIK
         ? 'PL → PL Stripe/BLIK → PL approve'
         : `${chain.bootstrap} checkout → ${chain.promotion} update → ${chain.provider} Stripe/${paymentStageLabel}/approve`;
       document.getElementById('proxyChainHint').textContent = isBLIK
         ? '三个阶段复用同一 sticky session'
+        : isKakao
+        ? 'Kakao 手动代理模式下，第一段与第三段必须使用同一国家的代理池'
         : '同一 Seed 贯穿页面设置的三段地区链路';
+      if (isKakao) {
+        document.getElementById('seedCountLabel').textContent = 'KR/VN代理';
+        document.querySelector('label[for="kakaoKrProxies"]').textContent = `${chain.bootstrap} 代理`;
+        document.querySelector('label[for="kakaoVnProxies"]').textContent = `${chain.promotion} 代理`;
+        document.getElementById('kakaoKrProxyHint').textContent =
+          `用于 ${chain.bootstrap} checkout / Bootstrap Stripe init / ${chain.provider} Stripe refresh / taxes / approve。`;
+        document.getElementById('kakaoVnProxyHint').textContent =
+          `只用于 ${chain.promotion} checkout/update，程序不会再自动改写 country/region。`;
+      } else {
+        document.getElementById('seedCountLabel').textContent = 'Seed代理';
+      }
       document.getElementById('billingCountryLabel').textContent = isBLIK
         ? 'BLIK账单国家'
         : `${paymentLabel}账单国家`;
@@ -1155,6 +1192,8 @@
         const data = await requestJson(`/api/storage?payment_method=${encodeURIComponent(methodId)}`);
         if (paymentMethodInput.value !== methodId) return;
         proxySeeds.value = typeof data.proxy_seeds === 'string' ? data.proxy_seeds : '';
+        kakaoKrProxies.value = typeof data.kakao_kr_proxies === 'string' ? data.kakao_kr_proxies : '';
+        kakaoVnProxies.value = typeof data.kakao_vn_proxies === 'string' ? data.kakao_vn_proxies : '';
         tokenField.value = typeof data.token === 'string' ? data.token : '';
       } catch (error) {
         loadedStorageMethods.delete(methodId);
@@ -1218,6 +1257,8 @@
       paymentMethodInput.value = method.id;
       loadCountryChain(method.id);
       proxySeeds.value = '';
+      kakaoKrProxies.value = '';
+      kakaoVnProxies.value = '';
       tokenField.value = '';
       loadedStorageMethods.delete(method.id);
       renderPaymentMethods(paymentMethodDefinitions);
@@ -1366,6 +1407,8 @@
       delete safe.session_token;
       delete safe.blik_code;
       delete safe.proxy_seeds;
+      delete safe.kakao_kr_proxies;
+      delete safe.kakao_vn_proxies;
       delete safe.pre_proxy;
       localStorage.setItem('ideal-runner-config', JSON.stringify(safe));
     }
@@ -1379,7 +1422,7 @@
           return;
         }
         let removedSensitiveConfig = false;
-        for (const name of ['proxy_seeds', 'pre_proxy', 'token', 'session_token', 'blik_code']) {
+        for (const name of ['proxy_seeds', 'kakao_kr_proxies', 'kakao_vn_proxies', 'pre_proxy', 'token', 'session_token', 'blik_code']) {
           if (!Object.hasOwn(saved, name)) continue;
           delete saved[name];
           removedSensitiveConfig = true;

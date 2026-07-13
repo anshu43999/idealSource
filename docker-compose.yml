@@ -11,7 +11,8 @@ services:
       - KAKAO_PRE_PROXY=
       - UPI_PRE_PROXY=
     volumes:
-      - ./kakao/proxy_seeds.txt:/app/kakao/proxy_seeds.txt
+      - ./kakao/kr_proxy_seeds.txt:/app/kakao/kr_proxy_seeds.txt
+      - ./kakao/vn_proxy_seeds.txt:/app/kakao/vn_proxy_seeds.txt
       - ./kakao/token.txt:/app/kakao/token.txt
       - ./upi/proxy_seeds.txt:/app/upi/proxy_seeds.txt
       - ./upi/token.txt:/app/upi/token.txt

@@ -319,6 +319,26 @@ def proxy_state_file() -> Path:
     return Path(raw).expanduser() if raw else SCRIPT_DIR / "proxy_state.json"
 
 
+def checkout_proxy_file() -> Path:
+    raw = os.environ.get("KAKAO_CHECKOUT_PROXY_FILE", "").strip()
+    if raw:
+        return Path(raw).expanduser()
+    legacy = os.environ.get("KAKAO_PROXY_SEED_FILE", "").strip()
+    if legacy:
+        return Path(legacy).expanduser()
+    return SCRIPT_DIR / "kr_proxy_seeds.txt"
+
+
+def promotion_proxy_file() -> Path:
+    raw = os.environ.get("KAKAO_PROMOTION_PROXY_FILE", "").strip()
+    return Path(raw).expanduser() if raw else SCRIPT_DIR / "vn_proxy_seeds.txt"
+
+
+def provider_proxy_file() -> Path:
+    raw = os.environ.get("KAKAO_PROVIDER_PROXY_FILE", "").strip()
+    return Path(raw).expanduser() if raw else checkout_proxy_file()
+
+
 def load_proxy_state() -> dict[str, Any]:
     global _proxy_state
     with _state_lock:
@@ -332,6 +352,7 @@ def load_proxy_state() -> dict[str, Any]:
         _proxy_state = payload if isinstance(payload, dict) else {}
         _proxy_state.setdefault("seed", {})
         _proxy_state.setdefault("role", {})
+        _proxy_state.setdefault("pool", {})
         return _proxy_state
 
 
@@ -343,6 +364,137 @@ def save_proxy_state() -> None:
         temp = path.with_name(f".{path.name}.tmp")
         temp.write_text(json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         os.replace(temp, path)
+
+
+def pool_name_for_role(role: str) -> str:
+    return "promotion" if role == "promotion" else "checkout"
+
+
+def pool_file_for_role(role: str) -> Path:
+    return promotion_proxy_file() if pool_name_for_role(role) == "promotion" else checkout_proxy_file()
+
+
+def pool_record(role: str, proxy: str) -> dict[str, Any]:
+    key = proxy_chain_key(proxy)
+    if not key:
+        return {}
+    state = load_proxy_state()
+    pools = state.setdefault("pool", {})
+    pool_name = pool_name_for_role(role)
+    records = pools.setdefault(pool_name, {})
+    record = records.setdefault(key, {})
+    if not isinstance(record, dict):
+        records[key] = {}
+        return records[key]
+    return record
+
+
+def pool_proxy_usable(role: str, proxy: str, now: int) -> bool:
+    record = pool_record(role, proxy)
+    return not (record.get("removed") or record_in_cooldown(record, now))
+
+
+def remove_pool_proxy(role: str, proxy: str, reason: str) -> bool:
+    if not env_bool("KAKAO_PROXY_REMOVE_FAILED", True):
+        return False
+    path = pool_file_for_role(role)
+    key = proxy_chain_key(proxy)
+    if not key or not path.is_file():
+        return False
+    with _file_lock:
+        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
+        removed = [line for line in lines if proxy_chain_key(line) == key]
+        if not removed:
+            return False
+        kept = [line for line in lines if proxy_chain_key(line) != key]
+        temp = path.with_name(f".{path.name}.tmp")
+        temp.write_text("".join(kept), encoding="utf-8")
+        os.replace(temp, path)
+        audit = SCRIPT_DIR / "removed_proxies.jsonl"
+        with audit.open("a", encoding="utf-8") as handle:
+            handle.write(
+                json.dumps(
+                    {
+                        "time": int(time.time()),
+                        "role": pool_name_for_role(role),
+                        "proxy": proxy_label(proxy),
+                        "reason": redact_log_text(str(reason or ""))[:300],
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+    return True
+
+
+def record_pool_success(role: str, proxy: str) -> None:
+    if not proxy_chain_key(proxy):
+        return
+    record = pool_record(role, proxy)
+    record["success"] = int(record.get("success") or 0) + 1
+    record["fail"] = 0
+    record["last_success"] = int(time.time())
+    record["last_reason"] = "success"
+    save_proxy_state()
+
+
+def record_pool_failure(role: str, proxy: str, reason: str) -> str:
+    if not proxy_chain_key(proxy) or is_account_error(reason) or is_checkout_shape_error(reason):
+        return "kept"
+    record = pool_record(role, proxy)
+    record["fail"] = int(record.get("fail") or 0) + 1
+    record["last_fail"] = int(time.time())
+    record["last_reason"] = redact_log_text(str(reason or "failed"))[:240]
+    if is_direct_proxy_error(reason) or "出口国家" in reason:
+        record["removed"] = True
+        save_proxy_state()
+        return "removed" if remove_pool_proxy(role, proxy, reason) else "kept"
+    remove_after = env_int("KAKAO_PROXY_REMOVE_AFTER_FAILS", 3, minimum=1, maximum=100)
+    if is_proxy_health_error(reason) and int(record.get("fail") or 0) >= remove_after:
+        record["removed"] = True
+        save_proxy_state()
+        return "removed" if remove_pool_proxy(role, proxy, reason) else "kept"
+    save_proxy_state()
+    return "cooling"
+
+
+def load_proxy_pool(role: str) -> list[str]:
+    path = pool_file_for_role(role)
+    if not path.is_file():
+        raise RuntimeError(f"{role_label(role)} 代理文件不存在")
+    unique: list[str] = []
+    seen: set[str] = set()
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        register_proxy_for_redaction(line)
+        proxy = normalize_proxy_url(line)
+        key = proxy_chain_key(proxy)
+        if proxy and key and key not in seen:
+            seen.add(key)
+            unique.append(proxy)
+    if not unique:
+        raise RuntimeError(f"{role_label(role)} 代理为空")
+
+    now = int(time.time())
+    usable: list[str] = []
+    skipped = 0
+    for proxy in unique:
+        record = pool_record(role, proxy)
+        if record.get("removed") or record_in_cooldown(record, now):
+            skipped += 1
+            continue
+        usable.append(proxy)
+    if not usable:
+        raise RuntimeError(f"{role_label(role)} 代理已全部处于失败冷却或已移除")
+    random.shuffle(usable)
+    usable.sort(
+        key=lambda proxy: (
+            int(pool_record(role, proxy).get("success") or 0),
+            int(pool_record(role, proxy).get("last_success") or 0),
+        ),
+        reverse=True,
+    )
+    log(f"加载 {role_label(role)} 代理 {len(usable)} 条，冷却/移除跳过 {skipped} 条")
+    return usable
 
 
 def seed_record(proxy_seed: str) -> dict[str, Any]:
@@ -1493,6 +1645,124 @@ def run_single_seed_mode(token: str, proxy_seeds: list[str]) -> int:
     return 1
 
 
+def select_verified_direct_proxy(role: str, proxies: list[str], attempted_keys: set[str]) -> str | None:
+    now = int(time.time())
+    while True:
+        candidates = [
+            proxy
+            for proxy in proxies
+            if proxy_chain_key(proxy) not in attempted_keys and pool_proxy_usable(role, proxy, now)
+        ]
+        if not candidates:
+            return None
+        candidates.sort(
+            key=lambda proxy: (
+                int(pool_record(role, proxy).get("success") or 0),
+                int(pool_record(role, proxy).get("last_success") or 0),
+            ),
+            reverse=True,
+        )
+        proxy = candidates[0]
+        attempted_keys.add(proxy_chain_key(proxy))
+        ok, detail = preflight_proxy(proxy, role)
+        if ok:
+            log(f"{role_label(role)} {proxy_label(proxy)} 出口预检通过：{detail}")
+            return proxy
+        state = record_pool_failure(role, proxy, detail)
+        state_text = "已移除" if state == "removed" else ("进入冷却" if state == "cooling" else "保留")
+        log(f"{role_label(role)} {proxy_label(proxy)} 出口预检失败，{state_text}: {detail[:180]}", "[WARN] ")
+
+
+def run_manual_proxy_mode(token: str, checkout_proxies: list[str], promotion_proxies: list[str]) -> int:
+    proxies_per_round = env_int(
+        "KAKAO_SEEDS_PER_ROUND",
+        env_int("IDEAL_CHECKOUT_RETRY_MAX", 5, minimum=1, maximum=100),
+        minimum=1,
+        maximum=100,
+    )
+    max_rounds = env_int(
+        "KAKAO_MAX_RETRY",
+        env_int("IDEAL_MAX_RETRY", 5, minimum=1, maximum=100),
+        minimum=1,
+        maximum=100,
+    )
+    max_attempts = proxies_per_round * max_rounds
+    attempted_checkout_keys: set[str] = set()
+    attempted_promotion_keys: set[str] = set()
+    stop_event = Event()
+    last_error = ""
+    attempt = 0
+
+    log(
+        "开始执行 Kakao 手动代理链路："
+        f"{CHECKOUT_COUNTRY} checkout/Bootstrap Stripe init -> {PROMOTION_COUNTRY} checkout/update -> "
+        f"{PROVIDER_COUNTRY} Stripe refresh/taxes/Kakao/approve/redirect；"
+        f"每轮代理尝试数={proxies_per_round}，重试轮数={max_rounds}，"
+        f"最多完整链路={max_attempts}。"
+    )
+    while attempt < max_attempts:
+        checkout_proxy = select_verified_direct_proxy("checkout", checkout_proxies, attempted_checkout_keys)
+        if not checkout_proxy:
+            last_error = f"没有可用的 {CHECKOUT_COUNTRY} checkout/provider 代理"
+            break
+        promotion_proxy = select_verified_direct_proxy("promotion", promotion_proxies, attempted_promotion_keys)
+        if not promotion_proxy:
+            last_error = f"没有可用的 {PROMOTION_COUNTRY} promotion 代理"
+            break
+        provider_proxy = checkout_proxy
+        attempt += 1
+        log(
+            f"完整链路 {attempt}/{max_attempts}："
+            f"{CHECKOUT_COUNTRY} checkout={proxy_label(checkout_proxy)}；"
+            f"{PROMOTION_COUNTRY} promotion={proxy_label(promotion_proxy)}；"
+            f"{PROVIDER_COUNTRY} provider/approve={proxy_label(provider_proxy)}"
+        )
+        try:
+            result = kakao_link(
+                token,
+                checkout_proxy,
+                promotion_proxy,
+                provider_proxy,
+                stop_event=stop_event,
+            )
+            final_url = str(result.get("provider_redirect_url") or "")
+            host = urlsplit(final_url).netloc.lower()
+            if "nicepay" not in host and "kakao" not in host:
+                raise RuntimeError(f"not kakao/nicepay redirect: {final_url[:180]}")
+            record_pool_success("checkout", checkout_proxy)
+            record_pool_success("promotion", promotion_proxy)
+            log("Kakao/Nicepay 跳转链接已获取")
+            print("\nKakao/Nicepay 最终跳转 URL:", flush=True)
+            print(final_url, flush=True)
+            return 0
+        except TaskStopped:
+            log("任务已停止", "[WARN] ")
+            return 1
+        except Exception as exc:
+            error = str(exc)
+            last_error = error
+            if is_account_error(error):
+                log(f"账号不可继续：{error[:240]}", "[ERROR] ")
+                return 1
+            checkout_state = record_pool_failure("checkout", checkout_proxy, error)
+            promotion_state = record_pool_failure("promotion", promotion_proxy, error)
+            if is_checkout_shape_error(error):
+                log(
+                    "当前 Kakao checkout 未保持支付方式或 0 KRW；"
+                    "已废弃本次 KR/VN 代理组合，不计为账号故障，下一组代理将重建完整链路："
+                    f"{error[:260]}",
+                    "[WARN] ",
+                )
+            else:
+                log(
+                    f"Kakao 手动代理链路失败，checkout={checkout_state}，promotion={promotion_state}：{error[:260]}",
+                    "[WARN] ",
+                )
+
+    log(f"全部失败: {last_error or '未获取到 Kakao/Nicepay 跳转链接'}", "[ERROR] ")
+    return 1
+
+
 def main() -> int:
     token = load_token()
     if not token:
@@ -1500,11 +1770,12 @@ def main() -> int:
         return 1
     log(f"使用 {token_account(token)}")
     try:
-        proxy_seeds = load_proxy_seeds()
+        checkout_proxies = load_proxy_pool("checkout")
+        promotion_proxies = load_proxy_pool("promotion")
     except Exception as exc:
         log(str(exc), "[ERROR] ")
         return 1
-    return run_single_seed_mode(token, proxy_seeds)
+    return run_manual_proxy_mode(token, checkout_proxies, promotion_proxies)
 
 
 if __name__ == "__main__":
