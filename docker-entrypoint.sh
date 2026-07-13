@@ -14,7 +14,8 @@ for f in \
     /app/upi/proxy_seeds.txt /app/upi/token.txt \
     /app/blik/proxy_seeds.txt /app/blik/token.txt /app/pix/token.txt /app/twint/token.txt; do
     if [ -d "$f" ]; then
-        rm -rf "$f"
+        echo "WARN: $f is a directory bind mount; fix the host path by replacing it with a file." >&2
+        continue
     fi
     if [ ! -f "$f" ]; then
         touch "$f"
