@@ -975,7 +975,14 @@ def remove_failed_proxies(group: str, failures: list[tuple[str, str]]) -> int:
                 )
         temp_path = path.with_name(f".{path.name}.tmp")
         temp_path.write_text("".join(kept), encoding="utf-8")
-        os.replace(temp_path, path)
+        try:
+            os.replace(temp_path, path)
+        except OSError:
+            path.write_text("".join(kept), encoding="utf-8")
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
         return len(removed)
 
 

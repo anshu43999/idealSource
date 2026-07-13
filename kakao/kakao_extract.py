@@ -409,7 +409,14 @@ def remove_pool_proxy(role: str, proxy: str, reason: str) -> bool:
         kept = [line for line in lines if proxy_chain_key(line) != key]
         temp = path.with_name(f".{path.name}.tmp")
         temp.write_text("".join(kept), encoding="utf-8")
-        os.replace(temp, path)
+        try:
+            os.replace(temp, path)
+        except OSError:
+            path.write_text("".join(kept), encoding="utf-8")
+            try:
+                temp.unlink()
+            except OSError:
+                pass
         audit = SCRIPT_DIR / "removed_proxies.jsonl"
         with audit.open("a", encoding="utf-8") as handle:
             handle.write(
@@ -558,7 +565,14 @@ def remove_seed(proxy_seed: str, reason: str) -> bool:
         kept = [line for line in lines if proxy_chain_key(line) != key]
         temp = path.with_name(f".{path.name}.tmp")
         temp.write_text("".join(kept), encoding="utf-8")
-        os.replace(temp, path)
+        try:
+            os.replace(temp, path)
+        except OSError:
+            path.write_text("".join(kept), encoding="utf-8")
+            try:
+                temp.unlink()
+            except OSError:
+                pass
         audit = SCRIPT_DIR / "removed_proxies.jsonl"
         with audit.open("a", encoding="utf-8") as handle:
             handle.write(
