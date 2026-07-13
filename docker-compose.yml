@@ -24,7 +24,7 @@ services:
       - ./kakao/token.txt:/app/kakao/token.txt
       - ./upi/proxy_seeds.txt:/app/upi/proxy_seeds.txt
       - ./upi/token.txt:/app/upi/token.txt
-      - ./blik/token.txt:/app/blik/token.txt:ro
-      - ./pix/token.txt:/app/pix/token.txt:ro
-      - ./twint/token.txt:/app/twint/token.txt:ro
+      - ./blik/token.txt:/app/blik/token.txt
+      - ./pix/token.txt:/app/pix/token.txt
+      - ./twint/token.txt:/app/twint/token.txt
       - ./logs:/app/logs
