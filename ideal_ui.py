@@ -145,7 +145,7 @@ def resolve_payment_method(payload: dict[str, Any]) -> tuple[str, dict[str, Any]
 def payment_storage_paths(payment_method: str) -> tuple[Path, Path]:
     if payment_method == "blik":
         return BLIK_PROXY_SEED_PATH, BLIK_TOKEN_PATH
-    if payment_method in MANUAL_PROXY_METHODS:
+    if payment_method == "kakao_pay":
         return KAKAO_KR_PROXY_SEED_PATH, KAKAO_TOKEN_PATH
     if payment_method == "pix":
         return PIX_PRIMARY_PROXY_SEED_PATH, PIX_TOKEN_PATH
