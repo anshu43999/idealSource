@@ -1,0 +1,2 @@
+# UPI Token
+# 此文件可选。如果留空，可在 Web UI 中直接输入 token。

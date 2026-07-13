@@ -1,0 +1,5 @@
+# Kakao Pay 代理池
+# 每行一个代理 URL，格式：http://用户名:密码-country=KR-xxx@主机:端口
+# 示例：
+# http://user:pass-country=KR-12345@gate.kookeey.info:1000
+# http://user:pass-country=KR-67890@gate.kookeey.info:1000

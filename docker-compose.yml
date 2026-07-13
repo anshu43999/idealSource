@@ -1,0 +1,21 @@
+services:
+  ideal-link-extractor:
+    build: .
+    container_name: ideal-link-extractor
+    ports:
+      - "8060:8060"
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      - IDEAL_PRE_PROXY=
+      - KAKAO_PRE_PROXY=
+      - UPI_PRE_PROXY=
+    volumes:
+      - ./kakao/proxy_seeds.txt:/app/kakao/proxy_seeds.txt
+      - ./kakao/token.txt:/app/kakao/token.txt
+      - ./upi/proxy_seeds.txt:/app/upi/proxy_seeds.txt
+      - ./upi/token.txt:/app/upi/token.txt
+      - ./blik/token.txt:/app/blik/token.txt:ro
+      - ./pix/token.txt:/app/pix/token.txt:ro
+      - ./twint/token.txt:/app/twint/token.txt:ro
+      - ./logs:/app/logs

@@ -1,0 +1,1492 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>支付提链工作台</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1120;
+      --surface: #111827;
+      --surface-2: #182235;
+      --surface-3: #202c40;
+      --border: #2a374d;
+      --border-strong: #3c4b64;
+      --text: #f8fafc;
+      --muted: #9aa8bc;
+      --muted-2: #728097;
+      --green: #22c55e;
+      --green-hover: #16a34a;
+      --green-soft: rgba(34, 197, 94, 0.12);
+      --amber: #f59e0b;
+      --red: #f87171;
+      --blue: #60a5fa;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 8% 0%, rgba(34, 197, 94, 0.09), transparent 28rem),
+        radial-gradient(circle at 100% 24%, rgba(96, 165, 250, 0.07), transparent 30rem),
+        var(--bg);
+    }
+
+    button, input, select { font: inherit; }
+
+    button {
+      cursor: pointer;
+      border: 0;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.46;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--blue);
+      outline-offset: 2px;
+    }
+
+    .shell {
+      width: min(1480px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 28px 0 40px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 22px;
+      padding: 0 2px;
+    }
+
+    .brand { display: flex; align-items: center; gap: 13px; }
+
+    .brand-mark {
+      display: grid;
+      width: 42px;
+      height: 42px;
+      place-items: center;
+      color: #07110b;
+      border-radius: 12px;
+      background: var(--green);
+      box-shadow: 0 10px 28px rgba(34, 197, 94, 0.22);
+    }
+
+    .brand-mark svg { width: 23px; height: 23px; }
+
+    h1 {
+      margin: 0;
+      font-size: 21px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status-group { display: flex; align-items: center; gap: 10px; }
+
+    .status-pill, .meta-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      gap: 8px;
+      padding: 7px 11px;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(17, 24, 39, 0.72);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted-2);
+    }
+
+    .status-pill.running { color: #b8f7ca; border-color: rgba(34, 197, 94, 0.32); background: var(--green-soft); }
+    .status-pill.running .status-dot { background: var(--green); box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12); }
+    .status-pill.failed { color: #fecaca; border-color: rgba(248, 113, 113, 0.3); }
+    .status-pill.failed .status-dot { background: var(--red); }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(430px, 0.9fr) minmax(540px, 1.25fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .config-stack { display: grid; gap: 16px; }
+
+    .card {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: rgba(17, 24, 39, 0.88);
+      box-shadow: var(--shadow);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid rgba(42, 55, 77, 0.72);
+    }
+
+    .card-title-wrap { display: flex; gap: 11px; }
+
+    .section-icon {
+      display: grid;
+      width: 32px;
+      height: 32px;
+      flex: 0 0 auto;
+      place-items: center;
+      color: var(--green);
+      border: 1px solid rgba(34, 197, 94, 0.2);
+      border-radius: 9px;
+      background: var(--green-soft);
+    }
+
+    .section-icon svg { width: 17px; height: 17px; }
+
+    h2 {
+      margin: 1px 0 0;
+      font-size: 15px;
+      line-height: 1.25;
+    }
+
+    .section-description {
+      margin: 4px 0 0;
+      color: var(--muted-2);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .card-body { padding: 18px 20px 20px; }
+
+    .payment-methods {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .payment-method-option {
+      min-width: 0;
+      min-height: 52px;
+      padding: 12px;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-2);
+      text-align: left;
+      transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
+    }
+
+    .payment-method-option:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-3); }
+    .payment-method-option.selected { color: #d8f9e3; border-color: rgba(34, 197, 94, 0.54); background: var(--green-soft); }
+    .payment-method-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .payment-method-name { color: inherit; font-size: 13px; font-weight: 800; }
+    .payment-method-hint { min-height: 17px; margin: 11px 0 0; color: var(--muted-2); font-size: 11px; line-height: 1.45; }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .field { min-width: 0; }
+    .field.full { grid-column: 1 / -1; }
+
+    .country-chain-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .country-chain-input { min-width: 0; }
+    .country-chain-input label { color: var(--muted); font-size: 11px; }
+    .country-chain-input input { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; text-transform: uppercase; }
+
+    .field label {
+      display: block;
+      margin-bottom: 7px;
+      color: #dbe4f0;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .hint {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted-2);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    input[type="text"], input[type="number"], input[type="password"], select {
+      width: 100%;
+      height: 41px;
+      padding: 0 11px;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      outline: none;
+      background: var(--surface-2);
+      transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 190px;
+      padding: 12px;
+      resize: vertical;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      outline: none;
+      background: var(--surface-2);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+    }
+
+    textarea.proxy-input { min-height: 145px; }
+
+    input:hover, select:hover, textarea:hover { border-color: var(--border-strong); }
+    input:focus, select:focus, textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1); }
+    input::placeholder, textarea::placeholder { color: #5f6d82; }
+
+    .derived-box {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      grid-column: 1 / -1;
+      padding: 12px 13px;
+      border: 1px solid rgba(96, 165, 250, 0.16);
+      border-radius: 10px;
+      background: rgba(96, 165, 250, 0.06);
+    }
+
+    .derived-label { color: var(--muted); font-size: 12px; }
+    .derived-value { color: #bfdbfe; font-size: 13px; font-weight: 700; }
+
+    .toggle-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-column: 1 / -1;
+      gap: 10px;
+    }
+
+    .toggle-row {
+      display: flex;
+      min-height: 48px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(24, 34, 53, 0.72);
+      transition: border-color 180ms ease, background 180ms ease;
+    }
+
+    .toggle-row:hover { border-color: var(--border-strong); background: var(--surface-2); }
+    .toggle-copy strong { display: block; color: #e5edf7; font-size: 12px; }
+    .toggle-copy small { display: block; margin-top: 3px; color: var(--muted-2); font-size: 10px; }
+
+    .toggle-row input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      opacity: 0;
+    }
+
+    .switch {
+      position: relative;
+      width: 36px;
+      height: 21px;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: #405069;
+      transition: background 180ms ease;
+    }
+
+    .switch::after {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 15px;
+      height: 15px;
+      content: "";
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.28);
+      transition: transform 180ms ease;
+    }
+
+    .toggle-row input:checked + .switch { background: var(--green); }
+    .toggle-row input:checked + .switch::after { transform: translateX(15px); }
+    .toggle-row input:focus-visible + .switch { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+    .token-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .token-state.available { color: #a7f3d0; border-color: rgba(34, 197, 94, 0.28); }
+
+    .runner-panel {
+      position: sticky;
+      top: 20px;
+      min-height: calc(100vh - 68px);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .runner-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .runner-actions { display: flex; gap: 8px; }
+
+    .btn {
+      display: inline-flex;
+      min-height: 39px;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 9px 14px;
+      border-radius: 9px;
+      font-size: 12px;
+      font-weight: 700;
+      transition: color 180ms ease, border-color 180ms ease, background 180ms ease;
+    }
+
+    .btn svg { width: 15px; height: 15px; }
+    .btn-primary { color: #06130a; background: var(--green); }
+    .btn-primary:hover:not(:disabled) { background: var(--green-hover); }
+    .btn-secondary { color: #d8e1ed; border: 1px solid var(--border); background: var(--surface-2); }
+    .btn-secondary:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-3); }
+    .btn-danger { color: #fecaca; border: 1px solid rgba(248, 113, 113, 0.25); background: rgba(248, 113, 113, 0.08); }
+    .btn-danger:hover:not(:disabled) { background: rgba(248, 113, 113, 0.14); }
+    .btn-icon { min-width: 36px; padding: 8px; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1px;
+      border-bottom: 1px solid var(--border);
+      background: var(--border);
+    }
+
+    .stat {
+      min-width: 0;
+      padding: 13px 15px;
+      background: var(--surface);
+    }
+
+    .stat-label { display: block; color: var(--muted-2); font-size: 10px; }
+    .stat-value { display: block; overflow: hidden; margin-top: 4px; color: #e7eef7; font-size: 14px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+
+    .result-box {
+      margin: 14px 16px 0;
+      padding: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      border-radius: 14px;
+      background: rgba(2, 6, 23, 0.28);
+    }
+
+    .result-box[hidden] { display: none; }
+    .result-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .result-title { color: #f8fafc; font-size: 15px; font-weight: 900; }
+    .result-subtitle { margin: 6px 0 0; color: var(--muted-2); font-size: 11px; }
+    .result-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .result-countdown {
+      display: inline-flex;
+      min-height: 39px;
+      align-items: center;
+      padding: 9px 12px;
+      border: 1px solid rgba(34, 197, 94, 0.28);
+      border-radius: 9px;
+      color: #b8f7ca;
+      background: rgba(34, 197, 94, 0.08);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .result-countdown.expired {
+      color: #fecaca;
+      border-color: rgba(248, 113, 113, 0.28);
+      background: rgba(248, 113, 113, 0.08);
+    }
+    .result-grid {
+      display: grid;
+      grid-template-columns: 150px minmax(0, 1fr);
+      gap: 18px 16px;
+      padding-top: 18px;
+    }
+    .result-label { color: var(--muted); font-size: 12px; font-weight: 800; }
+    .result-url {
+      min-width: 0;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: #f8fafc;
+      background: rgba(15, 23, 42, 0.62);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .console-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 13px 16px;
+    }
+
+    .console-label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; font-weight: 700; }
+    .console-label svg { width: 14px; height: 14px; }
+    .console-tools { display: flex; align-items: center; gap: 10px; }
+
+    .auto-scroll {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted-2);
+      cursor: pointer;
+      font-size: 10px;
+    }
+
+    .auto-scroll input { accent-color: var(--green); }
+
+    .console {
+      min-height: 460px;
+      max-height: calc(100vh - 280px);
+      flex: 1;
+      overflow: auto;
+      margin: 0 16px 16px;
+      padding: 14px;
+      border: 1px solid #243147;
+      border-radius: 11px;
+      background: #080d17;
+      scrollbar-color: #35445c transparent;
+    }
+
+    .empty-log {
+      display: grid;
+      min-height: 100%;
+      place-items: center;
+      color: #4f5e73;
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .log-line {
+      margin: 0 0 5px;
+      color: #aab8ca;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+
+    .log-line.warn { color: #f8cb73; }
+    .log-line.error { color: #fca5a5; }
+    .log-line.success { color: #86efac; }
+    .log-line.ui { color: #93c5fd; }
+
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 20;
+      max-width: min(420px, calc(100vw - 44px));
+      padding: 12px 14px;
+      color: #e8eef6;
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      background: #1d293c;
+      box-shadow: var(--shadow);
+      font-size: 12px;
+      transform: translateY(14px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 180ms ease, transform 180ms ease;
+    }
+
+    .toast.visible { transform: translateY(0); opacity: 1; }
+    .toast.error { color: #fecaca; border-color: rgba(248, 113, 113, 0.35); }
+
+    @media (max-width: 1040px) {
+      .layout { grid-template-columns: 1fr; }
+      .runner-panel { position: static; min-height: 680px; }
+      .console { max-height: 520px; }
+    }
+
+    @media (max-width: 680px) {
+      .shell { width: min(100% - 24px, 1480px); padding-top: 18px; }
+      .topbar { align-items: flex-start; }
+      .status-group .meta-pill { display: none; }
+      .layout { gap: 14px; }
+      .card { border-radius: 13px; }
+      .card-header, .card-body { padding-left: 15px; padding-right: 15px; }
+      .form-grid, .toggle-list, .payment-methods, .country-chain-grid { grid-template-columns: 1fr; }
+      .runner-head { align-items: flex-start; flex-direction: column; }
+      .runner-actions { width: 100%; }
+      .runner-actions .btn { flex: 1; }
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .console { min-height: 400px; margin: 0 10px 10px; }
+      .console-toolbar { padding-left: 12px; padding-right: 12px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 3h10l4 4v10l-4 4H7l-4-4V7z"></path>
+            <path d="m9 8 6 4-6 4z" fill="currentColor" stroke="none"></path>
+          </svg>
+        </div>
+        <div>
+          <h1>支付提链工作台</h1>
+          <p class="subtitle">本地提取任务控制台</p>
+        </div>
+      </div>
+      <div class="status-group">
+        <span class="meta-pill" id="tokenStatus">Token 检测中</span>
+        <span class="status-pill" id="statusPill"><span class="status-dot"></span><span id="statusText">未运行</span></span>
+      </div>
+    </header>
+
+    <div class="layout">
+      <form class="config-stack" id="configForm" autocomplete="off">
+        <section class="card">
+          <div class="card-header">
+            <div class="card-title-wrap">
+              <span class="section-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 10h18"></path><path d="M7 15h2"></path></svg>
+              </span>
+              <div><h2>支付方式</h2><p class="section-description">选择当前提链类型</p></div>
+            </div>
+          </div>
+          <div class="card-body">
+            <input id="paymentMethod" name="payment_method" type="hidden" value="ideal">
+            <div class="payment-methods" id="paymentMethods" role="radiogroup" aria-label="支付方式"></div>
+            <p class="payment-method-hint" id="paymentMethodHint" aria-live="polite"></p>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <div class="card-title-wrap">
+              <span class="section-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"></circle><path d="m11 12 8-8"></path><path d="m15 8 3 3"></path><path d="m17 6 2 2"></path></svg>
+              </span>
+              <div><h2>认证</h2><p class="section-description">按当前支付方式加载专用 token.txt，启动时覆盖保存</p></div>
+            </div>
+            <span class="token-state" id="tokenFileState">检测中</span>
+          </div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="field full">
+                <label for="token">Token JSON</label>
+                <textarea id="token" name="token" placeholder="粘贴 token.txt 中的完整 JSON；留空使用项目中的 token.txt" spellcheck="false" autocomplete="off"></textarea>
+                <span class="hint">启动任务时覆盖保存到 token.txt；留空则继续使用已有文件</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <div class="card-title-wrap">
+              <span class="section-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 18V6"></path><path d="M10 18V9"></path><path d="M16 18V4"></path><path d="M22 18v-7"></path></svg>
+              </span>
+              <div><h2>执行策略</h2><p class="section-description">控制 seed 候选数量、总提链次数和结果轮询</p></div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="field">
+                <label for="batchSize" id="batchSizeLabel">每轮 Seed候选</label>
+                <input id="batchSize" name="batch_size" type="number" min="1" max="100" value="5" required>
+                <span class="hint" id="batchSizeHint">每次提链随机抽取最多 5 个 sticky seed</span>
+              </div>
+              <div class="field">
+                <label for="maxBatches" id="maxBatchesLabel">iDEAL总重试</label>
+                <input id="maxBatches" name="max_batches" type="number" min="1" max="100" value="5" required>
+                <span class="hint" id="maxBatchesHint">成功后自动停止后续提链</span>
+              </div>
+              <div class="field">
+                <label for="pollTimeout">结果轮询（秒）</label>
+                <input id="pollTimeout" name="poll_timeout" type="number" min="5" max="300" value="45" required>
+              </div>
+              <div class="derived-box">
+                <span class="derived-label">本次单链路策略</span>
+                <span class="derived-value" id="attemptPreview">总提链 5 次，每轮最多 5 个 seed</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <div class="card-title-wrap">
+              <span class="section-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3c2.5 2.7 3.8 5.7 3.8 9S14.5 18.3 12 21c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"></path></svg>
+              </span>
+              <div><h2>代理与地区</h2><p class="section-description" id="proxySectionDescription">只填写 sticky proxy seed，运行时派生 NL/VN/NL</p></div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="field full">
+                <label for="proxySeeds">代理 Seed 池</label>
+                <textarea class="proxy-input" id="proxySeeds" name="proxy_seeds" placeholder="粘贴 sticky 代理 seed，每行一条" spellcheck="false" autocomplete="off"></textarea>
+                <span class="hint" id="proxySeedsHint">点击启动后保存到 proxy_seeds.txt。每轮只取一个 seed：NL checkout/Stripe init → VN checkout/update → NL Stripe refresh/tax/iDEAL/approve；本次失败的 seed 不会再次抽取。</span>
+              </div>
+              <div class="field full" id="preProxyField">
+                <label for="preProxy">本机前置代理</label>
+                <input id="preProxy" name="pre_proxy" type="text" value="" placeholder="留空直连；可填 127.0.0.1:7897，未写协议默认 socks5h://" spellcheck="false">
+              </div>
+              <div class="field">
+                <label for="proxyDefaultScheme">裸代理默认协议</label>
+                <select id="proxyDefaultScheme" name="proxy_default_scheme">
+                  <option value="http" selected>HTTP</option>
+                  <option value="socks5h">SOCKS5</option>
+                </select>
+                <span class="hint">只影响没写 http:// 或 socks5h:// 的代理</span>
+              </div>
+              <div class="field full" id="countryChainField">
+                <label>三段地区链路</label>
+                <div class="country-chain-grid">
+                  <div class="country-chain-input">
+                    <label for="bootstrapCountry">Checkout / 首次 Stripe</label>
+                    <input id="bootstrapCountry" name="bootstrap_country" type="text" value="NL" maxlength="2" pattern="[A-Za-z]{2}" autocapitalize="characters" spellcheck="false" required>
+                  </div>
+                  <div class="country-chain-input">
+                    <label for="promotionCountry">checkout/update</label>
+                    <input id="promotionCountry" name="promotion_country" type="text" value="VN" maxlength="80" pattern="[A-Za-z]{2}(\s*,\s*[A-Za-z]{2})*" autocapitalize="characters" spellcheck="false" required>
+                  </div>
+                  <div class="country-chain-input">
+                    <label for="providerCountry">Stripe / 税务 / PM / approve</label>
+                    <input id="providerCountry" name="provider_country" type="text" value="NL" maxlength="2" pattern="[A-Za-z]{2}" autocapitalize="characters" spellcheck="false" required>
+                  </div>
+                </div>
+                <span class="hint" id="countryChainHint">第一段用于 Checkout 与首次 Stripe init，第二段用于 checkout/update，第三段用于后续支付阶段。</span>
+              </div>
+              <div class="field">
+                <label>派生链路</label>
+                <div class="static-value" id="proxyChainValue">NL → VN promotion → NL</div>
+                <span class="hint" id="proxyChainHint">国家固定，避免创建 Checkout 时丢失 iDEAL</span>
+              </div>
+              <div class="field">
+                <label id="billingCountryLabel">PM账单国家</label>
+                <div class="static-value" id="billingCountryValue">NL · Netherlands</div>
+                <span class="hint" id="billingCountryHint">固定用于 iDEAL Payment Method 与税务同步</span>
+              </div>
+              <div class="toggle-list">
+                <label class="toggle-row">
+                  <span class="toggle-copy"><strong>移除明确失败</strong><small>认证、连接或407错误</small></span>
+                  <input name="remove_failed" type="checkbox" checked><span class="switch" aria-hidden="true"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <div class="card-title-wrap">
+              <span class="section-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 10h18"></path><path d="M7 15h2"></path></svg>
+              </span>
+              <div><h2>支付设置</h2><p class="section-description" id="paymentSettingsDescription">优惠与银行</p></div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="field" id="bankField">
+                <label for="bank">iDEAL银行</label>
+                <input id="bank" name="bank" type="text" placeholder="留空自动选择">
+              </div>
+              <div class="field" id="blikCodeField" hidden>
+                <label for="blikCode">BLIK Code</label>
+                <input id="blikCode" name="blik_code" type="text" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="请输入6位BLIK Code" autocomplete="one-time-code">
+              </div>
+              <div class="field">
+                <label for="promoMode">优惠模式</label>
+                <select id="promoMode" name="promo_mode">
+                  <option value="coupon">coupon</option>
+                  <option value="campaign" selected>campaign</option>
+                  <option value="query">query</option>
+                  <option value="trial">trial</option>
+                  <option value="code">code</option>
+                  <option value="off">off</option>
+                </select>
+              </div>
+              <div class="field full">
+                <label for="promoId">优惠ID</label>
+                <input id="promoId" name="promo_id" type="text" value="plus-1-month-free" spellcheck="false">
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </form>
+
+      <section class="card runner-panel" aria-label="任务运行状态">
+        <div class="runner-head">
+          <div>
+            <h2>任务运行台</h2>
+            <p class="section-description">实时查看预筛、提取和Session补偿日志</p>
+          </div>
+          <div class="runner-actions">
+            <button class="btn btn-danger" id="stopButton" type="button" disabled>
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1"></rect></svg>
+              停止
+            </button>
+            <button class="btn btn-primary" id="startButton" type="button">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m8 5 11 7-11 7z"></path></svg>
+              启动任务
+            </button>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><span class="stat-label">Seed代理</span><span class="stat-value" id="seedCount">--</span></div>
+          <div class="stat"><span class="stat-label">派生链路</span><span class="stat-value" id="chainValue">NL/VN/NL</span></div>
+          <div class="stat"><span class="stat-label">运行时间</span><span class="stat-value" id="elapsedValue">00:00</span></div>
+        </div>
+
+        <div class="result-box" id="resultBox" hidden>
+          <div class="result-head">
+            <div>
+              <div class="result-title" id="resultTitle">iDEAL 提取结果</div>
+              <p class="result-subtitle" id="resultSubtitle">成功后显示最终 iDEAL 支付页链接。</p>
+            </div>
+            <div class="result-actions">
+              <span class="result-countdown" id="resultCountdown" hidden>有效期 15:00</span>
+              <button class="btn btn-primary" id="openButton" type="button">打开 iDEAL 链</button>
+              <button class="btn btn-secondary" id="copyButton" type="button">复制 iDEAL 链</button>
+            </div>
+          </div>
+          <div class="result-grid">
+            <div class="result-label" id="resultLabel">iDEAL 支付页链接</div>
+            <div class="result-url" id="resultUrl"></div>
+          </div>
+        </div>
+
+        <div class="console-toolbar">
+          <span class="console-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 7 4 4-4 4"></path><path d="M12 17h7"></path></svg>
+            实时日志
+          </span>
+          <div class="console-tools">
+            <label class="auto-scroll"><input id="autoScroll" type="checkbox" checked>自动置顶</label>
+            <button class="btn btn-secondary btn-icon" id="clearButton" type="button" aria-label="清空页面日志" title="清空页面日志">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="m19 6-1 14H6L5 6"></path></svg>
+            </button>
+          </div>
+        </div>
+        <div class="console" id="console" role="log" aria-live="polite">
+          <div class="empty-log" id="emptyLog">任务日志将在这里实时显示</div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <script>
+    const CONFIG_VERSION = '2026-07-12-country-chain-storage';
+    const form = document.getElementById('configForm');
+    const startButton = document.getElementById('startButton');
+    const stopButton = document.getElementById('stopButton');
+    const statusPill = document.getElementById('statusPill');
+    const statusText = document.getElementById('statusText');
+    const consoleBox = document.getElementById('console');
+    const emptyLog = document.getElementById('emptyLog');
+    const autoScroll = document.getElementById('autoScroll');
+    const toast = document.getElementById('toast');
+    const resultBox = document.getElementById('resultBox');
+    const resultTitle = document.getElementById('resultTitle');
+    const resultSubtitle = document.getElementById('resultSubtitle');
+    const resultLabel = document.getElementById('resultLabel');
+    const resultUrl = document.getElementById('resultUrl');
+    const resultCountdown = document.getElementById('resultCountdown');
+    const openButton = document.getElementById('openButton');
+    const copyButton = document.getElementById('copyButton');
+    const tokenField = document.getElementById('token');
+    const proxySeeds = document.getElementById('proxySeeds');
+    const paymentMethodInput = document.getElementById('paymentMethod');
+    const paymentMethodsBox = document.getElementById('paymentMethods');
+    const paymentMethodHint = document.getElementById('paymentMethodHint');
+    const blikCodeField = document.getElementById('blikCodeField');
+    const blikCodeInput = document.getElementById('blikCode');
+    const bankField = document.getElementById('bankField');
+    const preProxyField = document.getElementById('preProxyField');
+    const countryChainField = document.getElementById('countryChainField');
+    const bootstrapCountryInput = document.getElementById('bootstrapCountry');
+    const promotionCountryInput = document.getElementById('promotionCountry');
+    const providerCountryInput = document.getElementById('providerCountry');
+    const COUNTRY_CHAIN_DEFAULTS = {
+      ideal: { bootstrap: 'NL', promotion: 'VN', provider: 'NL' },
+      pix: { bootstrap: 'BR', promotion: 'VN', provider: 'BR' },
+      kakao_pay: { bootstrap: 'KR', promotion: 'VN', provider: 'KR' },
+      twint: { bootstrap: 'CH', promotion: 'VN', provider: 'CH' },
+      upi: { bootstrap: 'IN', promotion: 'VN', provider: 'IN' },
+    };
+    const COUNTRY_NAMES = {
+      BR: 'Brazil',
+      CH: 'Switzerland',
+      IN: 'India',
+      KR: 'South Korea',
+      NL: 'Netherlands',
+      VN: 'Vietnam',
+    };
+    const RESULT_TTL_SECONDS = {
+      kakao_pay: 20 * 60,
+      twint: 10 * 60,
+      upi: 5 * 60,
+      default: 15 * 60,
+    };
+    let currentResultUrl = '';
+    let resultExpireAt = 0;
+    let lastLogId = 0;
+    let currentRunId = 0;
+    let toastTimer = null;
+    let pollBusy = false;
+    let paymentMethodDefinitions = [];
+    let paymentMethodsVersion = '';
+    let paymentStorage = {};
+    let loadedStorageMethods = new Set();
+    let paymentCountryChains = {};
+
+    function updateAttemptPreview() {
+      const checkoutRetry = Number(document.getElementById('batchSize').value) || 0;
+      const idealRetry = Number(document.getElementById('maxBatches').value) || 0;
+      const isBLIK = paymentMethodInput.value === 'blik';
+      const isKakao = paymentMethodInput.value === 'kakao_pay';
+      document.getElementById('attemptPreview').textContent = isKakao
+        ? `最多完整链路 ${checkoutRetry * idealRetry} 次（每轮 ${checkoutRetry} 个 Seed × ${idealRetry} 轮）`
+        : `${isBLIK ? '总提交' : '总提链'} ${idealRetry} 次，每轮最多 ${checkoutRetry} 个 seed`;
+    }
+
+    function formatElapsed(seconds) {
+      const safe = Math.max(0, Number(seconds) || 0);
+      const hours = Math.floor(safe / 3600);
+      const minutes = Math.floor((safe % 3600) / 60);
+      const secs = safe % 60;
+      return hours > 0
+        ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+        : `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    function showToast(message, isError = false) {
+      window.clearTimeout(toastTimer);
+      toast.textContent = message;
+      toast.className = `toast visible${isError ? ' error' : ''}`;
+      toastTimer = window.setTimeout(() => { toast.className = 'toast'; }, 2800);
+    }
+
+    function selectedPaymentMethod() {
+      return paymentMethodDefinitions.find((method) => method.id === paymentMethodInput.value);
+    }
+
+    function normalizeCountryCode(value, fallback) {
+      const country = String(value || '').trim().toUpperCase();
+      return /^[A-Z]{2}$/.test(country) ? country : fallback;
+    }
+
+    function normalizePromotionCountries(value, fallback) {
+      const countries = String(value || '').trim().toUpperCase().split(',').map((country) => country.trim());
+      return countries.length > 0 && countries.every((country) => /^[A-Z]{2}$/.test(country))
+        ? countries.join(',')
+        : fallback;
+    }
+
+    function countryChainForMethod(methodId = paymentMethodInput.value) {
+      const defaults = COUNTRY_CHAIN_DEFAULTS[methodId];
+      if (!defaults) return null;
+      const saved = paymentCountryChains[methodId] || {};
+      const source = methodId === paymentMethodInput.value
+        ? {
+            bootstrap: bootstrapCountryInput.value,
+            promotion: promotionCountryInput.value,
+            provider: providerCountryInput.value,
+          }
+        : saved;
+      return {
+        bootstrap: normalizeCountryCode(source.bootstrap, defaults.bootstrap),
+        promotion: methodId === 'pix'
+          ? normalizePromotionCountries(source.promotion, defaults.promotion)
+          : normalizeCountryCode(source.promotion, defaults.promotion),
+        provider: normalizeCountryCode(source.provider, defaults.provider),
+      };
+    }
+
+    function saveActiveCountryChain() {
+      const chain = countryChainForMethod();
+      if (chain) paymentCountryChains[paymentMethodInput.value] = chain;
+    }
+
+    function loadCountryChain(methodId = paymentMethodInput.value) {
+      const defaults = COUNTRY_CHAIN_DEFAULTS[methodId];
+      if (!defaults) return;
+      const saved = paymentCountryChains[methodId] || {};
+      const chain = {
+        bootstrap: normalizeCountryCode(saved.bootstrap, defaults.bootstrap),
+        promotion: methodId === 'pix'
+          ? normalizePromotionCountries(saved.promotion, defaults.promotion)
+          : normalizeCountryCode(saved.promotion, defaults.promotion),
+        provider: normalizeCountryCode(saved.provider, defaults.provider),
+      };
+      paymentCountryChains[methodId] = chain;
+      bootstrapCountryInput.value = chain.bootstrap;
+      promotionCountryInput.value = chain.promotion;
+      providerCountryInput.value = chain.provider;
+    }
+
+    function paymentFlowForMethod(method = selectedPaymentMethod()) {
+      if (!method) return '';
+      const chain = countryChainForMethod(method.id);
+      return chain ? `${chain.bootstrap}/${chain.promotion}/${chain.provider}` : method.flow;
+    }
+
+    function countryDisplay(country) {
+      return COUNTRY_NAMES[country] ? `${country} · ${COUNTRY_NAMES[country]}` : country;
+    }
+
+    function resultPaymentLabel() {
+      const method = selectedPaymentMethod();
+      if (method?.label) return method.label;
+      return {
+        ideal: 'iDEAL',
+        pix: 'PIX',
+        kakao_pay: 'Kakao Pay',
+        blik: 'BLIK',
+        twint: 'TWINT',
+        upi: 'UPI',
+      }[paymentMethodInput.value] || '支付';
+    }
+
+    function resultTtlSeconds(paymentMethod = paymentMethodInput.value) {
+      return RESULT_TTL_SECONDS[paymentMethod] || RESULT_TTL_SECONDS.default;
+    }
+
+    function updateResultCopy() {
+      const label = resultPaymentLabel();
+      resultTitle.textContent = `${label} 提取结果`;
+      resultSubtitle.textContent = `成功后显示最终 ${label} 支付页链接。`;
+      resultLabel.textContent = `${label} 支付页链接`;
+      openButton.textContent = `打开 ${label} 链`;
+      copyButton.textContent = `复制 ${label} 链`;
+    }
+
+    function updatePaymentMethodHint() {
+      const method = selectedPaymentMethod();
+      if (!method) {
+        paymentMethodHint.textContent = '正在加载支付方式';
+        return;
+      }
+      paymentMethodHint.textContent = method.available
+        ? `${method.label} 已接入`
+        : `${method.label} 尚未接入`;
+    }
+
+    function applyPaymentMethodView() {
+      const method = selectedPaymentMethod();
+      const isBLIK = paymentMethodInput.value === 'blik';
+      const isKakao = paymentMethodInput.value === 'kakao_pay';
+      const isPix = paymentMethodInput.value === 'pix';
+      const isTwint = paymentMethodInput.value === 'twint';
+      const isUpi = paymentMethodInput.value === 'upi';
+      const chain = countryChainForMethod();
+      const isConfigurableChain = Boolean(chain);
+      const paymentLabel = resultPaymentLabel();
+      const chainFlow = isConfigurableChain ? paymentFlowForMethod(method) : method?.flow || '';
+      const paymentStageLabel = isKakao ? 'Kakao' : paymentLabel;
+      updateResultCopy();
+      blikCodeField.hidden = !isBLIK;
+      bankField.hidden = isBLIK || isKakao || isPix || isTwint || isUpi;
+      countryChainField.hidden = !isConfigurableChain;
+      for (const input of [bootstrapCountryInput, promotionCountryInput, providerCountryInput]) {
+        input.disabled = !isConfigurableChain;
+      }
+      promotionCountryInput.maxLength = isPix ? 80 : 2;
+      promotionCountryInput.pattern = isPix
+        ? '[A-Za-z]{2}(\\s*,\\s*[A-Za-z]{2})*'
+        : '[A-Za-z]{2}';
+      promotionCountryInput.placeholder = isPix ? 'VN,US' : '';
+      if (isConfigurableChain) {
+        document.getElementById('countryChainHint').textContent =
+          isPix
+            ? 'PIX：第一段用于 Checkout 与首次 Stripe init；第二段可按逗号填写多个地区，每次 update 后均用第三段刷新 Stripe，金额为 0 即进入后续阶段；第三段用于 Stripe refresh、税务、PM、confirm 与 approve。'
+            : `${paymentLabel}：第一段用于 Checkout 与首次 Stripe init，第二段用于 checkout/update，第三段用于 Stripe refresh、税务、PM、confirm 与 approve。`;
+      }
+      document.getElementById('batchSizeLabel').textContent = isKakao
+        ? '每轮 Seed 尝试数'
+        : '每轮 Seed候选';
+      document.getElementById('batchSizeHint').textContent = isKakao
+        ? '与重试轮数相乘，决定最多完整链路数'
+        : '每次提链随机抽取最多 5 个 sticky seed';
+      document.getElementById('maxBatchesLabel').textContent = isBLIK
+        ? 'BLIK总重试'
+        : isKakao
+        ? 'Kakao重试轮数'
+        : isPix
+        ? 'PIX总重试'
+        : isTwint
+        ? 'TWINT总重试'
+        : isUpi
+        ? 'UPI总重试'
+        : 'iDEAL总重试';
+      document.getElementById('maxBatchesHint').textContent = isKakao
+        ? '成功后立即停止；每轮会按 Seed 尝试数计算完整链路上限'
+        : '成功后自动停止后续提链';
+      document.getElementById('proxySectionDescription').textContent = isBLIK
+        ? '只填写 sticky proxy seed，运行时派生 PL/PL/PL'
+        : `只填写 sticky proxy seed，运行时派生 ${chainFlow}`;
+      proxySeeds.placeholder = isBLIK
+        ? '粘贴 sticky 代理 seed，每行一条；脚本会自动改写 country/region 为 PL'
+        : `粘贴 sticky 代理 seed，每行一条；脚本会自动改写 country/region 为 ${chain.bootstrap}、${chain.promotion}、${chain.provider}`;
+      document.getElementById('proxySeedsHint').textContent = isBLIK
+        ? '点击启动后保存到 BLIK 专用 proxy_seeds.txt。每条 Seed 固定派生：PL checkout → PL Stripe/BLIK → PL approve；本次失败的 Seed 不会再次抽取。'
+        : `点击启动后保存到 ${isKakao ? 'Kakao 专用 ' : isPix ? 'PIX 专用 ' : isTwint ? 'TWINT 专用 ' : isUpi ? 'UPI 专用 ' : ''}proxy_seeds.txt。每条 Seed 固定派生：${chain.bootstrap} checkout/Bootstrap Stripe init → ${chain.promotion} checkout/update → ${chain.provider} Stripe refresh/taxes/${paymentStageLabel}/approve；本次失败的 Seed 不会再次抽取。`;
+      document.getElementById('proxyChainValue').textContent = isBLIK
+        ? 'PL → PL Stripe/BLIK → PL approve'
+        : `${chain.bootstrap} checkout → ${chain.promotion} update → ${chain.provider} Stripe/${paymentStageLabel}/approve`;
+      document.getElementById('proxyChainHint').textContent = isBLIK
+        ? '三个阶段复用同一 sticky session'
+        : '同一 Seed 贯穿页面设置的三段地区链路';
+      document.getElementById('billingCountryLabel').textContent = isBLIK
+        ? 'BLIK账单国家'
+        : `${paymentLabel}账单国家`;
+      document.getElementById('billingCountryValue').textContent = isBLIK
+        ? 'PL · Poland'
+        : countryDisplay(chain.provider);
+      document.getElementById('billingCountryHint').textContent = isBLIK
+        ? '固定用于 BLIK 提交'
+        : `跟随第三段地区，用于 ${paymentLabel} Payment Method 与税务同步`;
+      document.getElementById('paymentSettingsDescription').textContent = isBLIK
+        ? 'BLIK Code 与优惠设置'
+        : isKakao
+        ? 'Kakao Pay 与优惠设置'
+        : isPix
+        ? 'PIX 与优惠设置'
+        : isTwint
+        ? 'TWINT 与优惠设置'
+        : isUpi
+        ? 'UPI 与优惠设置'
+        : '优惠与银行';
+      if (isBLIK) resultBox.hidden = true;
+      if (isConfigurableChain) {
+        document.getElementById('chainValue').textContent = chainFlow;
+      }
+      updatePaymentMethodHint();
+      updateAttemptPreview();
+    }
+
+    function storageForPaymentMethod(methodId = paymentMethodInput.value) {
+      const storage = paymentStorage[methodId];
+      return storage && typeof storage === 'object' ? storage : null;
+    }
+
+    async function applyStoredPaymentData(methodId = paymentMethodInput.value) {
+      if (loadedStorageMethods.has(methodId)) return;
+      loadedStorageMethods.add(methodId);
+      try {
+        const data = await requestJson(`/api/storage?payment_method=${encodeURIComponent(methodId)}`);
+        if (paymentMethodInput.value !== methodId) return;
+        proxySeeds.value = typeof data.proxy_seeds === 'string' ? data.proxy_seeds : '';
+        tokenField.value = typeof data.token === 'string' ? data.token : '';
+      } catch (error) {
+        loadedStorageMethods.delete(methodId);
+        showToast(`读取${methodId}已保存配置失败: ${error.message}`, true);
+      }
+    }
+
+    function renderPaymentMethods(methods) {
+      if (!Array.isArray(methods) || methods.length === 0) return;
+      const normalized = methods
+        .filter((method) => method && typeof method.id === 'string' && typeof method.label === 'string')
+        .map((method) => ({
+          id: method.id,
+          label: method.label,
+          flow: typeof method.flow === 'string' ? method.flow : '',
+          available: Boolean(method.available),
+        }));
+      if (normalized.length === 0) return;
+
+      paymentMethodDefinitions = normalized;
+      const selected = selectedPaymentMethod();
+      if (!selected || !selected.available) {
+        const fallback = normalized.find((method) => method.available);
+        if (fallback) paymentMethodInput.value = fallback.id;
+      }
+
+      const version = JSON.stringify(normalized);
+      if (version !== paymentMethodsVersion) {
+        paymentMethodsBox.replaceChildren();
+        for (const method of normalized) {
+          const button = document.createElement('button');
+          const name = document.createElement('span');
+          button.type = 'button';
+          button.className = 'payment-method-option';
+          button.dataset.paymentMethod = method.id;
+          button.setAttribute('role', 'radio');
+          button.disabled = !method.available;
+          button.title = method.label;
+          name.className = 'payment-method-name';
+          name.textContent = method.label;
+          button.append(name);
+          button.addEventListener('click', () => selectPaymentMethod(method.id));
+          paymentMethodsBox.append(button);
+        }
+        paymentMethodsVersion = version;
+      }
+
+      for (const button of paymentMethodsBox.querySelectorAll('[data-payment-method]')) {
+        const isSelected = button.dataset.paymentMethod === paymentMethodInput.value;
+        button.classList.toggle('selected', isSelected);
+        button.setAttribute('aria-checked', String(isSelected));
+      }
+      updatePaymentMethodHint();
+      applyPaymentMethodView();
+    }
+
+    function selectPaymentMethod(methodId) {
+      const method = paymentMethodDefinitions.find((entry) => entry.id === methodId);
+      if (!method || !method.available || paymentMethodInput.value === method.id) return;
+      saveActiveCountryChain();
+      paymentMethodInput.value = method.id;
+      loadCountryChain(method.id);
+      proxySeeds.value = '';
+      tokenField.value = '';
+      loadedStorageMethods.delete(method.id);
+      renderPaymentMethods(paymentMethodDefinitions);
+      applyStoredPaymentData(method.id);
+      saveNonSecretConfig(formPayload());
+    }
+
+    function updateResultCountdown() {
+      if (!resultExpireAt) {
+        resultCountdown.hidden = true;
+        resultCountdown.classList.remove('expired');
+        return;
+      }
+      const remaining = Math.max(0, Math.ceil(resultExpireAt - Date.now() / 1000));
+      resultCountdown.hidden = false;
+      resultCountdown.textContent = remaining > 0 ? `有效期 ${formatElapsed(remaining)}` : '已过期';
+      resultCountdown.classList.toggle('expired', remaining <= 0);
+    }
+
+    function classifyLog(text) {
+      if (text.includes('[ERROR]') || text.includes('Traceback') || text.includes('启动失败')) return 'error';
+      if (text.includes('[WARN]') || text.includes('失败')) return 'warn';
+      if (text.includes('[UI]')) return 'ui';
+      if (text.includes('iDEAL 最终扫码/授权 URL:') || text.includes('PIX 最终支付 URL:') || text.includes('TWINT 最终支付 URL:') || text.includes('UPI 最终支付 URL:') || text.includes('BLIK 自动提交完成') || text.includes('Kakao/Nicepay 最终跳转 URL:') || text.trim().startsWith('http://') || text.trim().startsWith('https://')) return 'success';
+      return '';
+    }
+
+    function clearConsole() {
+      consoleBox.querySelectorAll('.log-line').forEach((node) => node.remove());
+      emptyLog.hidden = false;
+    }
+
+    function appendLogs(entries) {
+      if (!entries || entries.length === 0) return;
+      emptyLog.hidden = true;
+      const fragment = document.createDocumentFragment();
+      for (const entry of [...entries].reverse()) {
+        const line = document.createElement('div');
+        line.className = `log-line ${classifyLog(entry.text)}`.trim();
+        line.textContent = entry.text;
+        fragment.appendChild(line);
+        lastLogId = Math.max(lastLogId, Number(entry.id) || 0);
+      }
+      consoleBox.insertBefore(fragment, consoleBox.firstChild);
+      const lines = consoleBox.querySelectorAll('.log-line');
+      for (let index = 1800; index < lines.length; index += 1) {
+        lines[index].remove();
+      }
+      if (autoScroll.checked) consoleBox.scrollTop = 0;
+    }
+
+    function setStatus(data) {
+      statusPill.className = 'status-pill';
+      if (data.running) {
+        statusPill.classList.add('running');
+        statusText.textContent = '运行中';
+      } else if (data.exit_code !== null && data.exit_code !== 0) {
+        statusPill.classList.add('failed');
+        statusText.textContent = `已结束 · ${data.exit_code}`;
+      } else if (data.exit_code === 0) {
+        statusText.textContent = '已完成';
+      } else {
+        statusText.textContent = '未运行';
+      }
+      startButton.disabled = Boolean(data.running) || Boolean(
+        paymentMethodDefinitions.length && !selectedPaymentMethod()?.available
+      );
+      stopButton.disabled = !data.running;
+      const storage = storageForPaymentMethod();
+      document.getElementById('elapsedValue').textContent = formatElapsed(data.elapsed);
+      document.getElementById('seedCount').textContent = storage?.proxy_count ?? data.proxy_counts?.seed ?? '--';
+      document.getElementById('chainValue').textContent = paymentFlowForMethod() || data.config?.payment_flow || '--';
+      const tokenReady = storage?.token_file ?? data.token_file;
+      const tokenText = tokenReady ? 'token.txt 已就绪' : 'token.txt 缺失';
+      document.getElementById('tokenStatus').textContent = tokenText;
+      const tokenFileState = document.getElementById('tokenFileState');
+      tokenFileState.textContent = tokenReady ? '文件已就绪' : '文件缺失';
+      tokenFileState.className = `token-state${tokenReady ? ' available' : ''}`;
+      const resultBelongsToSelectedMethod =
+        (data.config?.payment_method || paymentMethodInput.value) === paymentMethodInput.value;
+      if (paymentMethodInput.value === 'blik' || !resultBelongsToSelectedMethod) {
+        resultBox.hidden = true;
+        return;
+      }
+      if (data.result_url) {
+        const resultChanged = currentResultUrl !== data.result_url;
+        if (resultChanged) {
+          currentResultUrl = data.result_url;
+          resultUrl.textContent = data.result_url;
+          resultUrl.title = data.result_url;
+        }
+        const resultAt = Number(data.result_at) || 0;
+        if (resultAt) {
+          resultExpireAt = resultAt + resultTtlSeconds(data.config?.payment_method);
+        } else if (resultChanged || !resultExpireAt) {
+          resultExpireAt = Date.now() / 1000 + resultTtlSeconds(data.config?.payment_method);
+        }
+        updateResultCountdown();
+        resultBox.hidden = false;
+      } else {
+        if (currentResultUrl) {
+          currentResultUrl = '';
+          resultUrl.textContent = '';
+        }
+        resultExpireAt = 0;
+        updateResultCountdown();
+        resultBox.hidden = true;
+      }
+    }
+
+    function syncPaymentStorage(data) {
+      if (!data.payment_storage || typeof data.payment_storage !== 'object') return;
+      paymentStorage = data.payment_storage;
+      const methodId = paymentMethodInput.value;
+      if (methodId && !loadedStorageMethods.has(methodId)) {
+        applyStoredPaymentData(methodId);
+      }
+    }
+
+    function applyStatus(data, forceReset = false) {
+      if (forceReset || data.reset_logs || (currentRunId && data.run_id !== currentRunId)) {
+        clearConsole();
+        lastLogId = 0;
+      }
+      currentRunId = data.run_id;
+      renderPaymentMethods(data.payment_methods);
+      syncPaymentStorage(data);
+      setStatus(data);
+      appendLogs(data.logs);
+    }
+
+    function formPayload() {
+      saveActiveCountryChain();
+      const data = Object.fromEntries(new FormData(form).entries());
+      for (const name of ['remove_failed']) {
+        data[name] = form.elements[name].checked;
+      }
+      return data;
+    }
+
+    function saveNonSecretConfig(payload) {
+      const safe = { ...payload };
+      safe._version = CONFIG_VERSION;
+      safe.country_chains = paymentCountryChains;
+      delete safe.token;
+      delete safe.session_token;
+      delete safe.blik_code;
+      delete safe.proxy_seeds;
+      delete safe.pre_proxy;
+      localStorage.setItem('ideal-runner-config', JSON.stringify(safe));
+    }
+
+    function restoreConfig() {
+      try {
+        const saved = JSON.parse(localStorage.getItem('ideal-runner-config') || '{}');
+        if (saved._version !== CONFIG_VERSION) {
+          localStorage.removeItem('ideal-runner-config');
+          updateAttemptPreview();
+          return;
+        }
+        let removedSensitiveConfig = false;
+        for (const name of ['proxy_seeds', 'pre_proxy', 'token', 'session_token', 'blik_code']) {
+          if (!Object.hasOwn(saved, name)) continue;
+          delete saved[name];
+          removedSensitiveConfig = true;
+        }
+        if (removedSensitiveConfig) {
+          localStorage.setItem('ideal-runner-config', JSON.stringify(saved));
+        }
+        if (saved.country_chains && typeof saved.country_chains === 'object') {
+          paymentCountryChains = saved.country_chains;
+        }
+        for (const [name, value] of Object.entries(saved)) {
+          const field = form.elements[name];
+          if (!field) continue;
+          if (field.type === 'checkbox') field.checked = Boolean(value);
+          else field.value = value;
+        }
+        loadCountryChain(paymentMethodInput.value);
+      } catch (_) {
+        localStorage.removeItem('ideal-runner-config');
+      }
+      updateAttemptPreview();
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, options);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      return data;
+    }
+
+    async function pollStatus() {
+      if (pollBusy) return;
+      pollBusy = true;
+      try {
+        const data = await requestJson(`/api/status?since=${lastLogId}`);
+        applyStatus(data);
+      } catch (error) {
+        statusPill.className = 'status-pill failed';
+        statusText.textContent = '服务断开';
+      } finally {
+        pollBusy = false;
+      }
+    }
+
+    startButton.addEventListener('click', async () => {
+      if (paymentMethodInput.value === 'blik' && !/^\d{6}$/.test(blikCodeInput.value.trim())) {
+        showToast('BLIK Code 必须是6位数字', true);
+        blikCodeInput.focus();
+        return;
+      }
+      if (!form.reportValidity()) return;
+      const payload = formPayload();
+      startButton.disabled = true;
+      saveNonSecretConfig(payload);
+      try {
+        const data = await requestJson('/api/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        applyStatus(data, true);
+        showToast('任务已启动');
+      } catch (error) {
+        showToast(error.message, true);
+        startButton.disabled = false;
+      }
+    });
+
+    stopButton.addEventListener('click', async () => {
+      stopButton.disabled = true;
+      try {
+        const data = await requestJson('/api/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        showToast(data.stopped ? '正在停止任务' : '当前没有运行中的任务');
+        await pollStatus();
+      } catch (error) {
+        showToast(error.message, true);
+      }
+    });
+
+    copyButton.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(currentResultUrl || resultUrl.textContent);
+        showToast(`${resultPaymentLabel()} 链已复制`);
+      } catch (_) {
+        showToast('复制失败，请手动复制', true);
+      }
+    });
+    openButton.addEventListener('click', () => {
+      if (!currentResultUrl) return;
+      window.open(currentResultUrl, '_blank', 'noopener,noreferrer');
+    });
+
+    document.getElementById('clearButton').addEventListener('click', clearConsole);
+    document.getElementById('batchSize').addEventListener('input', updateAttemptPreview);
+    document.getElementById('maxBatches').addEventListener('input', updateAttemptPreview);
+    for (const input of [bootstrapCountryInput, promotionCountryInput, providerCountryInput]) {
+      input.addEventListener('input', () => {
+        saveActiveCountryChain();
+        applyPaymentMethodView();
+      });
+    }
+    form.addEventListener('change', () => saveNonSecretConfig(formPayload()));
+
+    restoreConfig();
+    pollStatus();
+    window.setInterval(pollStatus, 1000);
+    window.setInterval(updateResultCountdown, 1000);
+  </script>
+</body>
+</html>

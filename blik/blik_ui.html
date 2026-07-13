@@ -1,0 +1,1000 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BLIK Runner</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1120;
+      --surface: #111827;
+      --surface-2: #182235;
+      --surface-3: #202c40;
+      --border: #2a374d;
+      --border-strong: #3c4b64;
+      --text: #f8fafc;
+      --muted: #9aa8bc;
+      --muted-2: #728097;
+      --green: #22c55e;
+      --green-hover: #16a34a;
+      --green-soft: rgba(34, 197, 94, 0.12);
+      --amber: #f59e0b;
+      --red: #f87171;
+      --blue: #60a5fa;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 8% 0%, rgba(34, 197, 94, 0.09), transparent 28rem),
+        radial-gradient(circle at 100% 24%, rgba(96, 165, 250, 0.07), transparent 30rem),
+        var(--bg);
+    }
+
+    button, input, select { font: inherit; }
+
+    button {
+      cursor: pointer;
+      border: 0;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.46;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--blue);
+      outline-offset: 2px;
+    }
+
+    .shell {
+      width: min(1480px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 28px 0 40px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 22px;
+      padding: 0 2px;
+    }
+
+    .brand { display: flex; align-items: center; gap: 13px; }
+
+    .brand-mark {
+      display: grid;
+      width: 42px;
+      height: 42px;
+      place-items: center;
+      color: #07110b;
+      border-radius: 12px;
+      background: var(--green);
+      box-shadow: 0 10px 28px rgba(34, 197, 94, 0.22);
+    }
+
+    .brand-mark svg { width: 23px; height: 23px; }
+
+    h1 {
+      margin: 0;
+      font-size: 21px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status-group { display: flex; align-items: center; gap: 10px; }
+
+    .status-pill, .meta-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      gap: 8px;
+      padding: 7px 11px;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(17, 24, 39, 0.72);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted-2);
+    }
+
+    .status-pill.running { color: #b8f7ca; border-color: rgba(34, 197, 94, 0.32); background: var(--green-soft); }
+    .status-pill.running .status-dot { background: var(--green); box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12); }
+    .status-pill.failed { color: #fecaca; border-color: rgba(248, 113, 113, 0.3); }
+    .status-pill.failed .status-dot { background: var(--red); }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(430px, 0.9fr) minmax(540px, 1.25fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .config-stack { display: grid; gap: 16px; }
+
+    .card {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: rgba(17, 24, 39, 0.88);
+      box-shadow: var(--shadow);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid rgba(42, 55, 77, 0.72);
+    }
+
+    .card-title-wrap { display: flex; gap: 11px; }
+
+    .section-icon {
+      display: grid;
+      width: 32px;
+      height: 32px;
+      flex: 0 0 auto;
+      place-items: center;
+      color: var(--green);
+      border: 1px solid rgba(34, 197, 94, 0.2);
+      border-radius: 9px;
+      background: var(--green-soft);
+    }
+
+    .section-icon svg { width: 17px; height: 17px; }
+
+    h2 {
+      margin: 1px 0 0;
+      font-size: 15px;
+      line-height: 1.25;
+    }
+
+    .section-description {
+      margin: 4px 0 0;
+      color: var(--muted-2);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .card-body { padding: 18px 20px 20px; }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .field { min-width: 0; }
+    .field.full { grid-column: 1 / -1; }
+
+    .field label {
+      display: block;
+      margin-bottom: 7px;
+      color: #dbe4f0;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .hint {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted-2);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    input[type="text"], input[type="number"], input[type="password"], select {
+      width: 100%;
+      height: 41px;
+      padding: 0 11px;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      outline: none;
+      background: var(--surface-2);
+      transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 190px;
+      padding: 12px;
+      resize: vertical;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      outline: none;
+      background: var(--surface-2);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+    }
+
+    textarea.proxy-input { min-height: 145px; }
+
+    input:hover, select:hover, textarea:hover { border-color: var(--border-strong); }
+    input:focus, select:focus, textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1); }
+    input::placeholder, textarea::placeholder { color: #5f6d82; }
+
+    .derived-box {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      grid-column: 1 / -1;
+      padding: 12px 13px;
+      border: 1px solid rgba(96, 165, 250, 0.16);
+      border-radius: 10px;
+      background: rgba(96, 165, 250, 0.06);
+    }
+
+    .derived-label { color: var(--muted); font-size: 12px; }
+    .derived-value { color: #bfdbfe; font-size: 13px; font-weight: 700; }
+
+    .toggle-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-column: 1 / -1;
+      gap: 10px;
+    }
+
+    .toggle-row {
+      display: flex;
+      min-height: 48px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(24, 34, 53, 0.72);
+      transition: border-color 180ms ease, background 180ms ease;
+    }
+
+    .toggle-row:hover { border-color: var(--border-strong); background: var(--surface-2); }
+    .toggle-copy strong { display: block; color: #e5edf7; font-size: 12px; }
+    .toggle-copy small { display: block; margin-top: 3px; color: var(--muted-2); font-size: 10px; }
+
+    .toggle-row input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      opacity: 0;
+    }
+
+    .switch {
+      position: relative;
+      width: 36px;
+      height: 21px;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: #405069;
+      transition: background 180ms ease;
+    }
+
+    .switch::after {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 15px;
+      height: 15px;
+      content: "";
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.28);
+      transition: transform 180ms ease;
+    }
+
+    .toggle-row input:checked + .switch { background: var(--green); }
+    .toggle-row input:checked + .switch::after { transform: translateX(15px); }
+    .toggle-row input:focus-visible + .switch { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+    .token-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .token-state.available { color: #a7f3d0; border-color: rgba(34, 197, 94, 0.28); }
+
+    .runner-panel {
+      position: sticky;
+      top: 20px;
+      min-height: calc(100vh - 68px);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .runner-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .runner-actions { display: flex; gap: 8px; }
+
+    .btn {
+      display: inline-flex;
+      min-height: 39px;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 9px 14px;
+      border-radius: 9px;
+      font-size: 12px;
+      font-weight: 700;
+      transition: color 180ms ease, border-color 180ms ease, background 180ms ease;
+    }
+
+    .btn svg { width: 15px; height: 15px; }
+    .btn-primary { color: #06130a; background: var(--green); }
+    .btn-primary:hover:not(:disabled) { background: var(--green-hover); }
+    .btn-secondary { color: #d8e1ed; border: 1px solid var(--border); background: var(--surface-2); }
+    .btn-secondary:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-3); }
+    .btn-danger { color: #fecaca; border: 1px solid rgba(248, 113, 113, 0.25); background: rgba(248, 113, 113, 0.08); }
+    .btn-danger:hover:not(:disabled) { background: rgba(248, 113, 113, 0.14); }
+    .btn-icon { min-width: 36px; padding: 8px; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+      border-bottom: 1px solid var(--border);
+      background: var(--border);
+    }
+
+    .stat {
+      min-width: 0;
+      padding: 13px 15px;
+      background: var(--surface);
+    }
+
+    .stat-label { display: block; color: var(--muted-2); font-size: 10px; }
+    .stat-value { display: block; overflow: hidden; margin-top: 4px; color: #e7eef7; font-size: 14px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+
+    .result-box {
+      margin: 14px 16px 0;
+      padding: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      border-radius: 14px;
+      background: rgba(2, 6, 23, 0.28);
+    }
+
+    .result-box[hidden] { display: none; }
+    .result-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .result-title { color: #f8fafc; font-size: 15px; font-weight: 900; }
+    .result-subtitle { margin: 6px 0 0; color: var(--muted-2); font-size: 11px; }
+    .result-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .result-countdown {
+      display: inline-flex;
+      min-height: 39px;
+      align-items: center;
+      padding: 9px 12px;
+      border: 1px solid rgba(34, 197, 94, 0.28);
+      border-radius: 9px;
+      color: #b8f7ca;
+      background: rgba(34, 197, 94, 0.08);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .result-countdown.expired {
+      color: #fecaca;
+      border-color: rgba(248, 113, 113, 0.28);
+      background: rgba(248, 113, 113, 0.08);
+    }
+    .result-grid {
+      display: grid;
+      grid-template-columns: 150px minmax(0, 1fr);
+      gap: 18px 16px;
+      padding-top: 18px;
+    }
+    .result-label { color: var(--muted); font-size: 12px; font-weight: 800; }
+    .result-url {
+      min-width: 0;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: #f8fafc;
+      background: rgba(15, 23, 42, 0.62);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .qr-card {
+      display: inline-flex;
+      width: fit-content;
+      min-width: 180px;
+      min-height: 180px;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.32);
+      border-radius: 14px;
+      background: #fff;
+    }
+    .qr-card img { display: block; width: 180px; height: 180px; }
+    .qr-status { color: #94a3b8; font-size: 12px; }
+
+    .console-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 13px 16px;
+    }
+
+    .console-label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; font-weight: 700; }
+    .console-label svg { width: 14px; height: 14px; }
+    .console-tools { display: flex; align-items: center; gap: 10px; }
+
+    .auto-scroll {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted-2);
+      cursor: pointer;
+      font-size: 10px;
+    }
+
+    .auto-scroll input { accent-color: var(--green); }
+
+    .console {
+      min-height: 460px;
+      max-height: calc(100vh - 280px);
+      flex: 1;
+      overflow: auto;
+      margin: 0 16px 16px;
+      padding: 14px;
+      border: 1px solid #243147;
+      border-radius: 11px;
+      background: #080d17;
+      scrollbar-color: #35445c transparent;
+    }
+
+    .empty-log {
+      display: grid;
+      min-height: 100%;
+      place-items: center;
+      color: #4f5e73;
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .log-line {
+      margin: 0 0 5px;
+      color: #aab8ca;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+
+    .log-line.warn { color: #f8cb73; }
+    .log-line.error { color: #fca5a5; }
+    .log-line.success { color: #86efac; }
+    .log-line.ui { color: #93c5fd; }
+
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 20;
+      max-width: min(420px, calc(100vw - 44px));
+      padding: 12px 14px;
+      color: #e8eef6;
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      background: #1d293c;
+      box-shadow: var(--shadow);
+      font-size: 12px;
+      transform: translateY(14px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 180ms ease, transform 180ms ease;
+    }
+
+    .toast.visible { transform: translateY(0); opacity: 1; }
+    .toast.error { color: #fecaca; border-color: rgba(248, 113, 113, 0.35); }
+
+    @media (max-width: 1040px) {
+      .layout { grid-template-columns: 1fr; }
+      .runner-panel { position: static; min-height: 680px; }
+      .console { max-height: 520px; }
+    }
+
+    @media (max-width: 680px) {
+      .shell { width: min(100% - 24px, 1480px); padding-top: 18px; }
+      .topbar { align-items: flex-start; }
+      .status-group .meta-pill { display: none; }
+      .layout { gap: 14px; }
+      .card { border-radius: 13px; }
+      .card-header, .card-body { padding-left: 15px; padding-right: 15px; }
+      .form-grid, .toggle-list { grid-template-columns: 1fr; }
+      .runner-head { align-items: flex-start; flex-direction: column; }
+      .runner-actions { width: 100%; }
+      .runner-actions .btn { flex: 1; }
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .console { min-height: 400px; margin: 0 10px 10px; }
+      .console-toolbar { padding-left: 12px; padding-right: 12px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 3h10l4 4v10l-4 4H7l-4-4V7z"></path>
+            <path d="m9 8 6 4-6 4z" fill="currentColor" stroke="none"></path>
+          </svg>
+        </div>
+        <div>
+          <h1>BLIK Runner</h1>
+          <p class="subtitle">本地提取任务控制台</p>
+        </div>
+      </div>
+      <div class="status-group">
+        <span class="meta-pill" id="tokenStatus">Token 检测中</span>
+        <span class="status-pill" id="statusPill"><span class="status-dot"></span><span id="statusText">未运行</span></span>
+      </div>
+    </header>
+
+    <div class="layout">
+      <form class="config-stack" id="configForm" autocomplete="off">
+        <input type="hidden" name="payment_method" value="blik">
+        <section class="card">
+          <div class="card-header">
+            <div class="card-title-wrap">
+              <span class="section-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"></circle><path d="m11 12 8-8"></path><path d="m15 8 3 3"></path><path d="m17 6 2 2"></path></svg>
+              </span>
+              <div><h2>认证</h2><p class="section-description">页面打开自动加载 token.txt，启动时覆盖保存</p></div>
+            </div>
+            <span class="token-state" id="tokenFileState">检测中</span>
+          </div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="field full">
+                <label for="token">Token JSON</label>
+                <textarea id="token" name="token" placeholder="粘贴 token.txt 中的完整 JSON；留空使用项目中的 token.txt" spellcheck="false" autocomplete="off"></textarea>
+                <span class="hint">启动任务时覆盖保存到 token.txt；留空则继续使用已有文件</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <div class="card-title-wrap">
+              <span class="section-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 18V6"></path><path d="M10 18V9"></path><path d="M16 18V4"></path><path d="M22 18v-7"></path></svg>
+              </span>
+              <div><h2>执行策略</h2><p class="section-description">控制单 Seed 候选数量、总提交次数和状态轮询</p></div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="field">
+                <label for="batchSize">每轮 Seed候选</label>
+                <input id="batchSize" name="batch_size" type="number" min="1" max="100" value="5" required>
+                <span class="hint">每轮最多抽取 5 条未尝试 sticky seed</span>
+              </div>
+              <div class="field">
+                <label for="maxBatches">BLIK总重试</label>
+                <input id="maxBatches" name="max_batches" type="number" min="1" max="100" value="5" required>
+                <span class="hint">成功后自动停止后续提链</span>
+              </div>
+              <div class="field">
+                <label for="pollTimeout">结果轮询（秒）</label>
+                <input id="pollTimeout" name="poll_timeout" type="number" min="5" max="300" value="45" required>
+              </div>
+              <div class="derived-box">
+                <span class="derived-label">本次单链路策略</span>
+                <span class="derived-value" id="attemptPreview">总提交 5 次，每轮最多 5 个 seed</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <div class="card-title-wrap">
+              <span class="section-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3c2.5 2.7 3.8 5.7 3.8 9S14.5 18.3 12 21c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"></path></svg>
+              </span>
+              <div><h2>代理与地区</h2><p class="section-description">只填写 sticky proxy seed，运行时派生完整波兰链路</p></div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="field full">
+                <label for="proxySeeds">代理 Seed 池</label>
+                <textarea class="proxy-input" id="proxySeeds" name="proxy_seeds" placeholder="粘贴 sticky 代理 seed，每行一条；脚本会自动改写 country/region 为 PL" spellcheck="false" autocomplete="off"></textarea>
+                <span class="hint">点击启动后保存到 proxy_seeds.txt。每条 Seed 固定派生：PL checkout → PL Stripe/BLIK → PL approve；本次失败的 Seed 不会再次抽取。</span>
+              </div>
+              <div class="field full">
+                <label for="preProxy">本机前置代理</label>
+                <input id="preProxy" name="pre_proxy" type="text" value="" placeholder="留空直连；可填 127.0.0.1:7897，未写协议默认 socks5h://" spellcheck="false">
+              </div>
+              <div class="field">
+                <label for="proxyDefaultScheme">裸代理默认协议</label>
+                <select id="proxyDefaultScheme" name="proxy_default_scheme">
+                  <option value="http">HTTP</option>
+                  <option value="socks5h" selected>SOCKS5</option>
+                </select>
+                <span class="hint">只影响没写 http:// 或 socks5h:// 的代理</span>
+              </div>
+              <div class="field">
+                <label>派生链路</label>
+                <div class="static-value">PL → PL Stripe/BLIK → PL approve</div>
+                <span class="hint">三个阶段复用同一 sticky session</span>
+              </div>
+              <div class="toggle-list">
+                <label class="toggle-row">
+                  <span class="toggle-copy"><strong>移除明确失败</strong><small>认证、连接或407错误</small></span>
+                  <input name="remove_failed" type="checkbox" checked><span class="switch" aria-hidden="true"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <div class="card-title-wrap">
+              <span class="section-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 10h18"></path><path d="M7 15h2"></path></svg>
+              </span>
+              <div><h2>支付设置</h2><p class="section-description">BLIK Code 与优惠设置</p></div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="field">
+                <label for="blikCode">BLIK Code</label>
+                <input id="blikCode" name="blik_code" type="text" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="请输入6位BLIK Code" autocomplete="one-time-code">
+              </div>
+              <div class="field">
+                <label for="promoMode">优惠模式</label>
+                <select id="promoMode" name="promo_mode">
+                  <option value="coupon">coupon</option>
+                  <option value="campaign" selected>campaign</option>
+                  <option value="query">query</option>
+                  <option value="trial">trial</option>
+                  <option value="code">code</option>
+                  <option value="off">off</option>
+                </select>
+              </div>
+              <div class="field full">
+                <label for="promoId">优惠ID</label>
+                <input id="promoId" name="promo_id" type="text" value="plus-1-month-free" spellcheck="false">
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </form>
+
+      <section class="card runner-panel" aria-label="任务运行状态">
+        <div class="runner-head">
+          <div>
+            <h2>任务运行台</h2>
+            <p class="section-description">实时查看预筛、提取和Session补偿日志</p>
+          </div>
+          <div class="runner-actions">
+            <button class="btn btn-danger" id="stopButton" type="button" disabled>
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1"></rect></svg>
+              停止
+            </button>
+            <button class="btn btn-primary" id="startButton" type="button">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m8 5 11 7-11 7z"></path></svg>
+              启动任务
+            </button>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><span class="stat-label">Seed代理</span><span class="stat-value" id="seedCount">--</span></div>
+          <div class="stat"><span class="stat-label">派生链路</span><span class="stat-value" id="chainValue">PL/PL/PL</span></div>
+          <div class="stat"><span class="stat-label">运行时间</span><span class="stat-value" id="elapsedValue">00:00</span></div>
+        </div>
+
+        <div class="console-toolbar">
+          <span class="console-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 7 4 4-4 4"></path><path d="M12 17h7"></path></svg>
+            实时日志
+          </span>
+          <div class="console-tools">
+            <label class="auto-scroll"><input id="autoScroll" type="checkbox" checked>自动置顶</label>
+            <button class="btn btn-secondary btn-icon" id="clearButton" type="button" aria-label="清空页面日志" title="清空页面日志">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="m19 6-1 14H6L5 6"></path></svg>
+            </button>
+          </div>
+        </div>
+        <div class="console" id="console" role="log" aria-live="polite">
+          <div class="empty-log" id="emptyLog">任务日志将在这里实时显示</div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <script>
+    const CONFIG_VERSION = '2026-07-12-blik-single-seed';
+    const form = document.getElementById('configForm');
+    const startButton = document.getElementById('startButton');
+    const stopButton = document.getElementById('stopButton');
+    const statusPill = document.getElementById('statusPill');
+    const statusText = document.getElementById('statusText');
+    const consoleBox = document.getElementById('console');
+    const emptyLog = document.getElementById('emptyLog');
+    const autoScroll = document.getElementById('autoScroll');
+    const toast = document.getElementById('toast');
+    const tokenField = document.getElementById('token');
+    const proxySeeds = document.getElementById('proxySeeds');
+    let lastLogId = 0;
+    let currentRunId = 0;
+    let toastTimer = null;
+    let pollBusy = false;
+
+    function updateAttemptPreview() {
+      const seedCandidates = Number(document.getElementById('batchSize').value) || 0;
+      const maxRetries = Number(document.getElementById('maxBatches').value) || 0;
+      document.getElementById('attemptPreview').textContent = `总提交 ${maxRetries} 次，每轮最多 ${seedCandidates} 个 seed`;
+    }
+
+    function formatElapsed(seconds) {
+      const safe = Math.max(0, Number(seconds) || 0);
+      const hours = Math.floor(safe / 3600);
+      const minutes = Math.floor((safe % 3600) / 60);
+      const secs = safe % 60;
+      return hours > 0
+        ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+        : `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    function showToast(message, isError = false) {
+      window.clearTimeout(toastTimer);
+      toast.textContent = message;
+      toast.className = `toast visible${isError ? ' error' : ''}`;
+      toastTimer = window.setTimeout(() => { toast.className = 'toast'; }, 2800);
+    }
+
+    function classifyLog(text) {
+      if (text.includes('[ERROR]') || text.includes('Traceback') || text.includes('启动失败')) return 'error';
+      if (text.includes('[WARN]') || text.includes('失败')) return 'warn';
+      if (text.includes('[UI]')) return 'ui';
+      if (text.includes('BLIK 自动提交完成')) return 'success';
+      return '';
+    }
+
+    function clearConsole() {
+      consoleBox.querySelectorAll('.log-line').forEach((node) => node.remove());
+      emptyLog.hidden = false;
+    }
+
+    function appendLogs(entries) {
+      if (!entries || entries.length === 0) return;
+      emptyLog.hidden = true;
+      const fragment = document.createDocumentFragment();
+      for (const entry of [...entries].reverse()) {
+        const line = document.createElement('div');
+        line.className = `log-line ${classifyLog(entry.text)}`.trim();
+        line.textContent = entry.text;
+        fragment.appendChild(line);
+        lastLogId = Math.max(lastLogId, Number(entry.id) || 0);
+      }
+      consoleBox.insertBefore(fragment, consoleBox.firstChild);
+      const lines = consoleBox.querySelectorAll('.log-line');
+      for (let index = 1800; index < lines.length; index += 1) {
+        lines[index].remove();
+      }
+      if (autoScroll.checked) consoleBox.scrollTop = 0;
+    }
+
+    function setStatus(data) {
+      statusPill.className = 'status-pill';
+      if (data.running) {
+        statusPill.classList.add('running');
+        statusText.textContent = '运行中';
+      } else if (data.exit_code !== null && data.exit_code !== 0) {
+        statusPill.classList.add('failed');
+        statusText.textContent = `已结束 · ${data.exit_code}`;
+      } else if (data.exit_code === 0) {
+        statusText.textContent = '已完成';
+      } else {
+        statusText.textContent = '未运行';
+      }
+      startButton.disabled = Boolean(data.running);
+      stopButton.disabled = !data.running;
+      document.getElementById('elapsedValue').textContent = formatElapsed(data.elapsed);
+      document.getElementById('seedCount').textContent = data.proxy_counts?.seed ?? '--';
+      document.getElementById('chainValue').textContent = data.config?.payment_flow || 'PL/PL/PL';
+      const tokenText = data.token_file ? 'token.txt 已就绪' : 'token.txt 缺失';
+      document.getElementById('tokenStatus').textContent = tokenText;
+      const tokenFileState = document.getElementById('tokenFileState');
+      tokenFileState.textContent = data.token_file ? '文件已就绪' : '文件缺失';
+      tokenFileState.className = `token-state${data.token_file ? ' available' : ''}`;
+    }
+
+    function applyStatus(data, forceReset = false) {
+      if (forceReset || data.reset_logs || (currentRunId && data.run_id !== currentRunId)) {
+        clearConsole();
+        lastLogId = 0;
+      }
+      currentRunId = data.run_id;
+      setStatus(data);
+      appendLogs(data.logs);
+    }
+
+    function formPayload() {
+      const data = Object.fromEntries(new FormData(form).entries());
+      for (const name of ['remove_failed']) {
+        data[name] = form.elements[name].checked;
+      }
+      return data;
+    }
+
+    function saveNonSecretConfig(payload) {
+      const safe = { ...payload };
+      safe._version = CONFIG_VERSION;
+      delete safe.token;
+      delete safe.session_token;
+      delete safe.blik_code;
+      delete safe.proxy_seeds;
+      delete safe.pre_proxy;
+      localStorage.setItem('ideal-runner-config', JSON.stringify(safe));
+    }
+
+    function restoreConfig() {
+      try {
+        const saved = JSON.parse(localStorage.getItem('ideal-runner-config') || '{}');
+        if (saved._version !== CONFIG_VERSION) {
+          localStorage.removeItem('ideal-runner-config');
+          updateAttemptPreview();
+          return;
+        }
+        let removedSensitiveConfig = false;
+        for (const name of ['proxy_seeds', 'pre_proxy', 'token', 'session_token', 'blik_code']) {
+          if (!Object.hasOwn(saved, name)) continue;
+          delete saved[name];
+          removedSensitiveConfig = true;
+        }
+        if (removedSensitiveConfig) {
+          localStorage.setItem('ideal-runner-config', JSON.stringify(saved));
+        }
+        for (const [name, value] of Object.entries(saved)) {
+          const field = form.elements[name];
+          if (!field) continue;
+          if (field.type === 'checkbox') field.checked = Boolean(value);
+          else field.value = value;
+        }
+      } catch (_) {
+        localStorage.removeItem('ideal-runner-config');
+      }
+      updateAttemptPreview();
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, options);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      return data;
+    }
+
+    async function pollStatus() {
+      if (pollBusy) return;
+      pollBusy = true;
+      try {
+        const data = await requestJson(`/api/status?since=${lastLogId}`);
+        applyStatus(data);
+      } catch (error) {
+        statusPill.className = 'status-pill failed';
+        statusText.textContent = '服务断开';
+      } finally {
+        pollBusy = false;
+      }
+    }
+
+    startButton.addEventListener('click', async () => {
+      const blikCodeInput = document.getElementById('blikCode');
+      if (!blikCodeInput.value.trim()) {
+        showToast('请填写 BLIK Code 后再启动任务', true);
+        blikCodeInput.focus();
+        return;
+      }
+      if (!form.reportValidity()) return;
+      const payload = formPayload();
+      startButton.disabled = true;
+      saveNonSecretConfig(payload);
+      try {
+        const data = await requestJson('/api/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        applyStatus(data, true);
+        showToast('任务已启动');
+      } catch (error) {
+        showToast(error.message, true);
+        startButton.disabled = false;
+      }
+    });
+
+    stopButton.addEventListener('click', async () => {
+      stopButton.disabled = true;
+      try {
+        const data = await requestJson('/api/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        showToast(data.stopped ? '正在停止任务' : '当前没有运行中的任务');
+        await pollStatus();
+      } catch (error) {
+        showToast(error.message, true);
+      }
+    });
+
+    document.getElementById('clearButton').addEventListener('click', clearConsole);
+    document.getElementById('batchSize').addEventListener('input', updateAttemptPreview);
+    document.getElementById('maxBatches').addEventListener('input', updateAttemptPreview);
+    form.addEventListener('change', () => saveNonSecretConfig(formPayload()));
+
+    restoreConfig();
+    pollStatus();
+    window.setInterval(pollStatus, 1000);
+  </script>
+</body>
+</html>

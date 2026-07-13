@@ -1,0 +1,4 @@
+# UPI 代理池
+# 每行一个代理 URL，格式：http://用户名:密码-country=IN-xxx@主机:端口
+# 示例：
+# http://user:pass-country=IN-12345@gate.kookeey.info:1000
