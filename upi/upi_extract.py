@@ -2796,6 +2796,7 @@ def run_once(
             log(f"checkout 0元失败缓存命中: 上次 amount={zero_amount}，本轮继续验证", "[WARN] ")
         chatgpt = build_chatgpt_session(access_token, device_id, checkout_proxy, session_token)
         checkout = create_checkout(chatgpt, checkout_country)
+        log(f"代理访问 checkout 地址: {checkout_page_url(checkout)}")
     except Exception as exc:
         if is_user_already_paid_error(exc):
             raise RuntimeError("用户已支付: User is already paid") from exc
@@ -3037,6 +3038,7 @@ def run_single_link_attempt(
                     log(f"checkout 0元失败缓存命中: 上次 amount={zero_amount}，本轮继续验证", "[WARN] ")
                 chatgpt = build_chatgpt_session(access_token, device_id, checkout_proxy, session_token)
                 checkout = create_checkout(chatgpt, checkout_country)
+                log(f"代理访问 checkout 地址: {checkout_page_url(checkout)}")
                 checkout_proxy_used = checkout_proxy
                 break
             except Exception as exc:
@@ -3286,6 +3288,7 @@ def run_single_link_mode(
                     log(f"checkout 0元失败缓存命中: 上次 amount={zero_amount}，本轮继续验证", "[WARN] ")
                 chatgpt = build_chatgpt_session(access_token, device_id, checkout_proxy, session_token)
                 checkout = create_checkout(chatgpt, checkout_country)
+                log(f"代理访问 checkout 地址: {checkout_page_url(checkout)}")
                 checkout_proxy_used = checkout_proxy
                 break
             except Exception as exc:

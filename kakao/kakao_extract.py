@@ -1316,6 +1316,7 @@ def kakao_link(
     ensure_running(stop_event)
     log(f"{CHECKOUT_COUNTRY} 创建 KRW Kakao trial checkout")
     checkout_id, publishable_key, checkout = create_checkout(checkout_session, token)
+    log(f"代理访问 checkout 地址: {checkout_page_url(checkout_id, checkout)}")
     checkout_page = activate_stripe_checkout(checkout_session, checkout_id)
 
     log(f"{CHECKOUT_COUNTRY} Bootstrap Stripe init")
