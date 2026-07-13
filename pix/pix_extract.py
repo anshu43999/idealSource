@@ -853,6 +853,53 @@ def proxy_seed_file() -> Path:
     return Path(raw).expanduser() if raw else SCRIPT_DIR / "proxy_seeds.txt"
 
 
+def checkout_proxy_file() -> Path:
+    raw = os.environ.get("PIX_CHECKOUT_PROXY_FILE", "").strip()
+    return Path(raw).expanduser() if raw else SCRIPT_DIR / "br_proxy_seeds.txt"
+
+
+def promotion_proxy_file() -> Path:
+    raw = os.environ.get("PIX_PROMOTION_PROXY_FILE", "").strip()
+    return Path(raw).expanduser() if raw else SCRIPT_DIR / "vn_proxy_seeds.txt"
+
+
+def provider_proxy_file() -> Path:
+    raw = os.environ.get("PIX_PROVIDER_PROXY_FILE", "").strip()
+    return Path(raw).expanduser() if raw else checkout_proxy_file()
+
+
+def manual_proxy_mode_enabled() -> bool:
+    return any(
+        os.environ.get(name, "").strip()
+        for name in (
+            "PIX_CHECKOUT_PROXY_FILE",
+            "PIX_PROMOTION_PROXY_FILE",
+            "PIX_PROVIDER_PROXY_FILE",
+        )
+    )
+
+
+def file_containing_proxy(paths: list[Path], proxy: str) -> Path:
+    key = proxy_chain_key(proxy)
+    if key:
+        for path in paths:
+            if not path.is_file():
+                continue
+            for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                if proxy_chain_key(line) == key:
+                    return path
+    return proxy_seed_file()
+
+
+def failed_proxy_file(proxy: str) -> Path:
+    if manual_proxy_mode_enabled():
+        return file_containing_proxy(
+            [checkout_proxy_file(), promotion_proxy_file(), provider_proxy_file()],
+            proxy,
+        )
+    return proxy_seed_file()
+
+
 def is_direct_remove_proxy_error(reason: str) -> bool:
     text = str(reason or "").lower()
     return any(
@@ -904,7 +951,7 @@ def remove_failed_proxies(group: str, failures: list[tuple[str, str]]) -> int:
         return 0
     for proxy, _reason in failures:
         register_proxy_for_redaction(proxy)
-    path = proxy_seed_file()
+    path = failed_proxy_file(failures[0][0])
     if not path.is_file():
         return 0
     reasons = {proxy_chain_key(proxy): reason for proxy, reason in failures if proxy_chain_key(proxy)}
@@ -979,6 +1026,30 @@ def load_proxy_seeds() -> list[str]:
     log(f"裸代理默认协议: {default_proxy_scheme()}://")
     log(f"本机前置代理: {proxy_short(pre_proxy_url())}")
     return proxy_seeds
+
+
+def load_manual_proxy_file(path: Path, label: str) -> list[str]:
+    if not path.is_file():
+        raise RuntimeError(f"{label} proxy file does not exist: {path}")
+    proxies = unique_proxy_seeds(load_proxy_file(path))
+    if not proxies:
+        raise RuntimeError(f"{label} proxy file is empty: {path}")
+    proxies = order_proxy_group("seed", proxies)
+    if not proxies:
+        raise RuntimeError(f"{label} proxy pool is cooling down: {path}")
+    return proxies
+
+
+def load_manual_proxy_pools() -> tuple[list[str], list[str], list[str]]:
+    checkout_proxies = load_manual_proxy_file(checkout_proxy_file(), "checkout")
+    promotion_proxies = load_manual_proxy_file(promotion_proxy_file(), "promotion")
+    provider_path = provider_proxy_file()
+    provider_proxies = checkout_proxies if provider_path == checkout_proxy_file() else load_manual_proxy_file(provider_path, "provider")
+    log(
+        f"Manual proxy pools: checkout={len(checkout_proxies)}, "
+        f"promotion={len(promotion_proxies)}, provider={len(provider_proxies)}"
+    )
+    return checkout_proxies, promotion_proxies, provider_proxies
 
 
 def new_session(proxy: str = "", use_pre_proxy: bool = True) -> Any:
@@ -2534,7 +2605,7 @@ def run_provider_flow(
     ctx: dict[str, Any] = {}
     amount = 0
     for promotion_index, promotion_country in enumerate(PIX_PROMOTION_COUNTRIES, start=1):
-        current_promotion_proxy = proxy_for_country(promotion_proxy, promotion_country)
+        current_promotion_proxy = promotion_proxy if manual_proxy_mode_enabled() else proxy_for_country(promotion_proxy, promotion_country)
         stage_label = f"{promotion_country} checkout/update {promotion_index}/{len(PIX_PROMOTION_COUNTRIES)}"
         log(f"{stage_label}: proxy={proxy_label(current_promotion_proxy)}")
         try:
@@ -3113,6 +3184,7 @@ def run_single_link_mode(
     access_token: str,
     session_token: str,
     proxy_seeds: list[str],
+    manual_proxy_pools: tuple[list[str], list[str], list[str]] | None = None,
 ) -> int:
     pix_workers = env_int("PIX_WORKERS", 1)
     if pix_workers > 1:
@@ -3131,6 +3203,8 @@ def run_single_link_mode(
     last_error = ""
     stop_event = Event()
     attempted_seed_keys: set[str] = set()
+    manual_proxy_mode = manual_proxy_pools is not None
+    checkout_pool, promotion_pool, provider_pool = manual_proxy_pools or (proxy_seeds, [], [])
 
     log(
         "开始执行 PIX 链提取流程："
@@ -3144,7 +3218,7 @@ def run_single_link_mode(
         device_id = str(uuid.uuid4())
         available_seeds = [
             proxy_seed
-            for proxy_seed in proxy_seeds
+            for proxy_seed in checkout_pool
             if proxy_chain_key(proxy_seed) not in attempted_seed_keys
         ]
         checkout_candidates = pick_random_proxies(available_seeds, checkout_retry, "seed")
@@ -3173,8 +3247,19 @@ def run_single_link_mode(
             chain_key = proxy_chain_key(proxy_seed)
             attempted_seed_keys.add(chain_key)
             try:
-                checkout_proxy, promotion_proxy, provider_proxy = pix_proxy_chain(proxy_seed)
-                log_pix_proxy_chain(proxy_seed, checkout_proxy, promotion_proxy, provider_proxy)
+                if manual_proxy_mode:
+                    checkout_proxy = proxy_seed
+                    promotion_proxy = random.choice(promotion_pool)
+                    provider_proxy = random.choice(provider_pool) if provider_pool and provider_pool is not checkout_pool else checkout_proxy
+                    log(
+                        "Manual proxy chain: "
+                        f"checkout={proxy_label(checkout_proxy)}, "
+                        f"promotion={proxy_label(promotion_proxy)}, "
+                        f"provider={proxy_label(provider_proxy)}"
+                    )
+                else:
+                    checkout_proxy, promotion_proxy, provider_proxy = pix_proxy_chain(proxy_seed)
+                    log_pix_proxy_chain(proxy_seed, checkout_proxy, promotion_proxy, provider_proxy)
                 log(
                     f"Checkout {checkout_index}/{len(checkout_candidates)}: "
                     f"{checkout_country}/{checkout_currency}, proxy={proxy_label(checkout_proxy)}，"
@@ -3266,10 +3351,13 @@ def main() -> int:
         log("access_token 为空", "[ERROR] ")
         return 1
 
-    proxy_seeds = load_proxy_seeds()
     flow_mode = os.environ.get("PIX_FLOW_MODE", "single").strip().lower() or "single"
     if flow_mode != "single":
         log(f"PIX_FLOW_MODE={flow_mode} 已收敛为 strict single seed 链路", "[WARN] ")
+    if manual_proxy_mode_enabled():
+        manual_proxy_pools = load_manual_proxy_pools()
+        return run_single_link_mode(access_token, session_token, manual_proxy_pools[0], manual_proxy_pools)
+    proxy_seeds = load_proxy_seeds()
     return run_single_link_mode(access_token, session_token, proxy_seeds)
 
 

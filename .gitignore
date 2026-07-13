@@ -13,8 +13,10 @@ proxy_seeds.txt
 */proxy_seeds.txt
 kr_proxy_seeds.txt
 vn_proxy_seeds.txt
+*_proxy_seeds.txt
 */kr_proxy_seeds.txt
 */vn_proxy_seeds.txt
+*/*_proxy_seeds.txt
 token.txt
 */token.txt
 proxy_state.json

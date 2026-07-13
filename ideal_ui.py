@@ -23,6 +23,8 @@ ROOT = Path(__file__).resolve().parent
 IDEAL_SCRIPT_PATH = ROOT / "ideal_qr_extract.py"
 UI_PATH = ROOT / "ideal_ui.html"
 PROXY_SEED_PATH = ROOT / "proxy_seeds.txt"
+IDEAL_PRIMARY_PROXY_SEED_PATH = ROOT / "nl_proxy_seeds.txt"
+IDEAL_PROMOTION_PROXY_SEED_PATH = ROOT / "vn_proxy_seeds.txt"
 BLIK_DIR = ROOT / "blik"
 BLIK_SCRIPT_PATH = BLIK_DIR / "blik_qr_extract.py"
 BLIK_PROXY_SEED_PATH = BLIK_DIR / "proxy_seeds.txt"
@@ -36,14 +38,20 @@ KAKAO_TOKEN_PATH = KAKAO_DIR / "token.txt"
 PIX_DIR = ROOT / "pix"
 PIX_SCRIPT_PATH = PIX_DIR / "pix_extract.py"
 PIX_PROXY_SEED_PATH = PIX_DIR / "proxy_seeds.txt"
+PIX_PRIMARY_PROXY_SEED_PATH = PIX_DIR / "br_proxy_seeds.txt"
+PIX_PROMOTION_PROXY_SEED_PATH = PIX_DIR / "vn_proxy_seeds.txt"
 PIX_TOKEN_PATH = PIX_DIR / "token.txt"
 TWINT_DIR = ROOT / "twint"
 TWINT_SCRIPT_PATH = TWINT_DIR / "twint_extract.py"
 TWINT_PROXY_SEED_PATH = TWINT_DIR / "proxy_seeds.txt"
+TWINT_PRIMARY_PROXY_SEED_PATH = TWINT_DIR / "ch_proxy_seeds.txt"
+TWINT_PROMOTION_PROXY_SEED_PATH = TWINT_DIR / "vn_proxy_seeds.txt"
 TWINT_TOKEN_PATH = TWINT_DIR / "token.txt"
 UPI_DIR = ROOT / "upi"
 UPI_SCRIPT_PATH = UPI_DIR / "upi_extract.py"
 UPI_PROXY_SEED_PATH = UPI_DIR / "proxy_seeds.txt"
+UPI_PRIMARY_PROXY_SEED_PATH = UPI_DIR / "in_proxy_seeds.txt"
+UPI_PROMOTION_PROXY_SEED_PATH = UPI_DIR / "vn_proxy_seeds.txt"
 UPI_TOKEN_PATH = UPI_DIR / "token.txt"
 LEGACY_PROXY_PATHS = (
     ROOT / "checkout.json",
@@ -105,6 +113,7 @@ PAYMENT_CHAIN_DEFAULTS: dict[str, tuple[str, str, str]] = {
     "twint": ("CH", "VN", "CH"),
     "upi": ("IN", "VN", "IN"),
 }
+MANUAL_PROXY_METHODS = {"ideal", "pix", "kakao_pay", "twint", "upi"}
 COUNTRY_CODE_RE = re.compile(r"[A-Z]{2}")
 
 
@@ -136,8 +145,16 @@ def resolve_payment_method(payload: dict[str, Any]) -> tuple[str, dict[str, Any]
 def payment_storage_paths(payment_method: str) -> tuple[Path, Path]:
     if payment_method == "blik":
         return BLIK_PROXY_SEED_PATH, BLIK_TOKEN_PATH
-    if payment_method == "kakao_pay":
+    if payment_method in MANUAL_PROXY_METHODS:
         return KAKAO_KR_PROXY_SEED_PATH, KAKAO_TOKEN_PATH
+    if payment_method == "pix":
+        return PIX_PRIMARY_PROXY_SEED_PATH, PIX_TOKEN_PATH
+    if payment_method == "twint":
+        return TWINT_PRIMARY_PROXY_SEED_PATH, TWINT_TOKEN_PATH
+    if payment_method == "upi":
+        return UPI_PRIMARY_PROXY_SEED_PATH, UPI_TOKEN_PATH
+    if payment_method == "ideal":
+        return IDEAL_PRIMARY_PROXY_SEED_PATH, TOKEN_PATH
     if payment_method == "pix":
         return PIX_PROXY_SEED_PATH, PIX_TOKEN_PATH
     if payment_method == "twint":
@@ -145,6 +162,20 @@ def payment_storage_paths(payment_method: str) -> tuple[Path, Path]:
     if payment_method == "upi":
         return UPI_PROXY_SEED_PATH, UPI_TOKEN_PATH
     return PROXY_SEED_PATH, TOKEN_PATH
+
+
+def manual_proxy_paths(payment_method: str) -> tuple[Path, Path] | None:
+    if payment_method == "ideal":
+        return IDEAL_PRIMARY_PROXY_SEED_PATH, IDEAL_PROMOTION_PROXY_SEED_PATH
+    if payment_method == "pix":
+        return PIX_PRIMARY_PROXY_SEED_PATH, PIX_PROMOTION_PROXY_SEED_PATH
+    if payment_method == "kakao_pay":
+        return KAKAO_KR_PROXY_SEED_PATH, KAKAO_VN_PROXY_SEED_PATH
+    if payment_method == "twint":
+        return TWINT_PRIMARY_PROXY_SEED_PATH, TWINT_PROMOTION_PROXY_SEED_PATH
+    if payment_method == "upi":
+        return UPI_PRIMARY_PROXY_SEED_PATH, UPI_PROMOTION_PROXY_SEED_PATH
+    return None
 
 
 def count_proxy_lines(path_value: str) -> int:
@@ -252,34 +283,48 @@ def resolve_proxy_file(value: str, label: str) -> str:
 
 
 def prepare_persistent_files(payload: dict[str, Any], payment_method: str) -> tuple[dict[str, Any], int]:
-    if payment_method == "kakao_pay":
-        kr_text = clean_text(payload, "kakao_kr_proxies", "", 400_000)
-        vn_text = clean_text(payload, "kakao_vn_proxies", "", 400_000)
+    if payment_method in MANUAL_PROXY_METHODS:
+        primary_path, promotion_path = manual_proxy_paths(payment_method) or (KAKAO_KR_PROXY_SEED_PATH, KAKAO_VN_PROXY_SEED_PATH)
+        kr_text = clean_text(
+            payload,
+            "manual_primary_proxies",
+            clean_text(payload, "kakao_kr_proxies", "", 400_000),
+            400_000,
+        )
+        vn_text = clean_text(
+            payload,
+            "manual_promotion_proxies",
+            clean_text(payload, "kakao_vn_proxies", "", 400_000),
+            400_000,
+        )
         kr_count = count_proxy_text(kr_text)
         vn_count = count_proxy_text(vn_text)
         if kr_count:
-            write_text_atomic(KAKAO_KR_PROXY_SEED_PATH, kr_text.rstrip() + "\n")
+            write_text_atomic(primary_path, kr_text.rstrip() + "\n")
         else:
-            kr_count = count_proxy_lines(str(KAKAO_KR_PROXY_SEED_PATH))
+            kr_count = count_proxy_lines(str(primary_path))
             if not kr_count:
                 raise ValueError("请填写 Kakao KR 代理")
         if vn_count:
-            write_text_atomic(KAKAO_VN_PROXY_SEED_PATH, vn_text.rstrip() + "\n")
+            write_text_atomic(promotion_path, vn_text.rstrip() + "\n")
         else:
-            vn_count = count_proxy_lines(str(KAKAO_VN_PROXY_SEED_PATH))
+            vn_count = count_proxy_lines(str(promotion_path))
             if not vn_count:
                 raise ValueError("请填写 Kakao VN 代理")
 
         token_text = clean_text(payload, "token", "", 30000)
         if token_text:
-            KAKAO_TOKEN_PATH.write_text(token_text.rstrip() + "\n", encoding="utf-8")
+            payment_storage_paths(payment_method)[1].write_text(token_text.rstrip() + "\n", encoding="utf-8")
 
         task_payload = dict(payload)
-        task_payload["proxy_seed_file"] = str(KAKAO_KR_PROXY_SEED_PATH)
-        task_payload["kakao_checkout_proxy_file"] = str(KAKAO_KR_PROXY_SEED_PATH)
-        task_payload["kakao_provider_proxy_file"] = str(KAKAO_KR_PROXY_SEED_PATH)
-        task_payload["kakao_promotion_proxy_file"] = str(KAKAO_VN_PROXY_SEED_PATH)
-        task_payload["token_file"] = str(KAKAO_TOKEN_PATH)
+        task_payload["proxy_seed_file"] = str(primary_path)
+        task_payload["manual_checkout_proxy_file"] = str(primary_path)
+        task_payload["manual_provider_proxy_file"] = str(primary_path)
+        task_payload["manual_promotion_proxy_file"] = str(promotion_path)
+        task_payload["kakao_checkout_proxy_file"] = str(primary_path)
+        task_payload["kakao_provider_proxy_file"] = str(primary_path)
+        task_payload["kakao_promotion_proxy_file"] = str(promotion_path)
+        task_payload["token_file"] = str(payment_storage_paths(payment_method)[1])
         for name in (
             "checkout_proxies",
             "promotion_proxies",
@@ -333,9 +378,9 @@ def build_environment(
         clean_text(payload, "proxy_seed_file", str(default_proxy_seed_path)),
         "代理 Seed 文件",
     )
-    kakao_checkout_proxy_file = ""
-    kakao_promotion_proxy_file = ""
-    kakao_provider_proxy_file = ""
+    manual_checkout_proxy_file = ""
+    manual_promotion_proxy_file = ""
+    manual_provider_proxy_file = ""
     default_chain = PAYMENT_CHAIN_DEFAULTS.get(payment_method)
     if default_chain:
         bootstrap_country = clean_country_code(payload, "bootstrap_country", default_chain[0])
@@ -374,16 +419,17 @@ def build_environment(
     if payment_method == "kakao_pay":
         if bootstrap_country != provider_country:
             raise ValueError("Kakao 手动代理模式要求第一段和第三段国家一致")
-        kakao_checkout_proxy_file = resolve_proxy_file(
-            clean_text(payload, "kakao_checkout_proxy_file", str(KAKAO_KR_PROXY_SEED_PATH)),
+        primary_path, promotion_path = manual_proxy_paths(payment_method) or (KAKAO_KR_PROXY_SEED_PATH, KAKAO_VN_PROXY_SEED_PATH)
+        manual_checkout_proxy_file = resolve_proxy_file(
+            clean_text(payload, "manual_checkout_proxy_file", clean_text(payload, "kakao_checkout_proxy_file", str(primary_path))),
             "Kakao KR 代理文件",
         )
-        kakao_provider_proxy_file = resolve_proxy_file(
-            clean_text(payload, "kakao_provider_proxy_file", kakao_checkout_proxy_file),
+        manual_provider_proxy_file = resolve_proxy_file(
+            clean_text(payload, "manual_provider_proxy_file", clean_text(payload, "kakao_provider_proxy_file", manual_checkout_proxy_file)),
             "Kakao Provider 代理文件",
         )
-        kakao_promotion_proxy_file = resolve_proxy_file(
-            clean_text(payload, "kakao_promotion_proxy_file", str(KAKAO_VN_PROXY_SEED_PATH)),
+        manual_promotion_proxy_file = resolve_proxy_file(
+            clean_text(payload, "manual_promotion_proxy_file", clean_text(payload, "kakao_promotion_proxy_file", str(promotion_path))),
             "Kakao VN 代理文件",
         )
     promo_id = clean_text(payload, "promo_id", "plus-1-month-free", 200)
@@ -415,6 +461,9 @@ def build_environment(
         "KAKAO_PROXY_REMOVE_AFTER_FAILS",
         "PIX_TOKEN",
         "PIX_PROXY_SEED_FILE",
+        "PIX_CHECKOUT_PROXY_FILE",
+        "PIX_PROMOTION_PROXY_FILE",
+        "PIX_PROVIDER_PROXY_FILE",
         "PIX_FLOW_MODE",
         "PIX_CHECKOUT_RETRY_MAX",
         "PIX_PROVIDER_RETRY_MAX",
@@ -451,6 +500,9 @@ def build_environment(
         "PIX_PRE_PROXY",
         "TWINT_TOKEN",
         "TWINT_PROXY_SEED_FILE",
+        "TWINT_CHECKOUT_PROXY_FILE",
+        "TWINT_PROMOTION_PROXY_FILE",
+        "TWINT_PROVIDER_PROXY_FILE",
         "TWINT_FLOW_MODE",
         "TWINT_CHECKOUT_RETRY_MAX",
         "TWINT_PROVIDER_RETRY_MAX",
@@ -488,6 +540,9 @@ def build_environment(
         "TWINT_PROXY_REMOVE_FAILED",
         "UPI_TOKEN",
         "UPI_PROXY_SEED_FILE",
+        "UPI_CHECKOUT_PROXY_FILE",
+        "UPI_PROMOTION_PROXY_FILE",
+        "UPI_PROVIDER_PROXY_FILE",
         "UPI_FLOW_MODE",
         "UPI_CHECKOUT_RETRY_MAX",
         "UPI_PROVIDER_RETRY_MAX",
@@ -597,13 +652,22 @@ def build_environment(
                 "IDEAL_PROXY_TARGET_USE_PRE_PROXY": "1",
             }
         )
+    elif payment_method == "ideal":
+        env.update(
+            {
+                "IDEAL_CHECKOUT_PROXY_FILE": manual_checkout_proxy_file,
+                "IDEAL_PROMOTION_PROXY_FILE": manual_promotion_proxy_file,
+                "IDEAL_PROVIDER_PROXY_FILE": manual_provider_proxy_file,
+            }
+        )
+        env.pop("IDEAL_BLIK_CODE", None)
     elif payment_method == "kakao_pay":
         env.update(
             {
                 "KAKAO_PROXY_SEED_FILE": proxy_seed_file,
-                "KAKAO_CHECKOUT_PROXY_FILE": kakao_checkout_proxy_file,
-                "KAKAO_PROMOTION_PROXY_FILE": kakao_promotion_proxy_file,
-                "KAKAO_PROVIDER_PROXY_FILE": kakao_provider_proxy_file,
+                "KAKAO_CHECKOUT_PROXY_FILE": manual_checkout_proxy_file,
+                "KAKAO_PROMOTION_PROXY_FILE": manual_promotion_proxy_file,
+                "KAKAO_PROVIDER_PROXY_FILE": manual_provider_proxy_file,
                 "KAKAO_PROXY_DEFAULT_SCHEME": proxy_default_scheme,
                 "KAKAO_SEEDS_PER_ROUND": str(batch_size),
                 "KAKAO_MAX_RETRY": str(max_batches),
@@ -624,6 +688,9 @@ def build_environment(
         env.update(
             {
                 "PIX_PROXY_SEED_FILE": proxy_seed_file,
+                "PIX_CHECKOUT_PROXY_FILE": manual_checkout_proxy_file,
+                "PIX_PROMOTION_PROXY_FILE": manual_promotion_proxy_file,
+                "PIX_PROVIDER_PROXY_FILE": manual_provider_proxy_file,
                 "PIX_FLOW_MODE": "single",
                 "PIX_CHECKOUT_RETRY_MAX": str(batch_size),
                 "PIX_PROVIDER_RETRY_MAX": str(provider_retry),
@@ -666,6 +733,9 @@ def build_environment(
         env.update(
             {
                 "TWINT_PROXY_SEED_FILE": proxy_seed_file,
+                "TWINT_CHECKOUT_PROXY_FILE": manual_checkout_proxy_file,
+                "TWINT_PROMOTION_PROXY_FILE": manual_promotion_proxy_file,
+                "TWINT_PROVIDER_PROXY_FILE": manual_provider_proxy_file,
                 "TWINT_FLOW_MODE": "single",
                 "TWINT_CHECKOUT_RETRY_MAX": str(batch_size),
                 "TWINT_PROVIDER_RETRY_MAX": str(provider_retry),
@@ -708,6 +778,9 @@ def build_environment(
         env.update(
             {
                 "UPI_PROXY_SEED_FILE": proxy_seed_file,
+                "UPI_CHECKOUT_PROXY_FILE": manual_checkout_proxy_file,
+                "UPI_PROMOTION_PROXY_FILE": manual_promotion_proxy_file,
+                "UPI_PROVIDER_PROXY_FILE": manual_provider_proxy_file,
                 "UPI_FLOW_MODE": "single",
                 "UPI_CHECKOUT_RETRY_MAX": str(batch_size),
                 "UPI_PROVIDER_RETRY_MAX": str(provider_retry),
@@ -981,8 +1054,10 @@ class ScriptRunner:
             for method_id in ("ideal", "pix", "blik", "kakao_pay", "twint", "upi"):
                 method_proxy_file, method_token_file = payment_storage_paths(method_id)
                 proxy_count = count_proxy_lines(str(method_proxy_file))
-                if method_id == "kakao_pay":
-                    proxy_count += count_proxy_lines(str(KAKAO_VN_PROXY_SEED_PATH))
+                manual_paths = manual_proxy_paths(method_id)
+                if manual_paths:
+                    primary_path, promotion_path = manual_paths
+                    proxy_count = count_proxy_lines(str(primary_path)) + count_proxy_lines(str(promotion_path))
                 payment_storage[method_id] = {
                     "proxy_count": proxy_count,
                     "token_file": method_token_file.is_file(),
@@ -1079,6 +1154,11 @@ class UIHandler(BaseHTTPRequestHandler):
                 "proxy_seeds": read_local_text(proxy_seed_path),
                 "token": read_local_text(token_path),
             }
+            manual_paths = manual_proxy_paths(method_id)
+            if manual_paths:
+                primary_path, promotion_path = manual_paths
+                payload["manual_primary_proxies"] = read_local_text(primary_path)
+                payload["manual_promotion_proxies"] = read_local_text(promotion_path)
             if method_id == "kakao_pay":
                 payload["kakao_kr_proxies"] = read_local_text(KAKAO_KR_PROXY_SEED_PATH)
                 payload["kakao_vn_proxies"] = read_local_text(KAKAO_VN_PROXY_SEED_PATH)
