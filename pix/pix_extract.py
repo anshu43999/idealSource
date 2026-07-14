@@ -2580,11 +2580,6 @@ def run_provider_flow(
         if isinstance(payment_method_types, list):
             methods = [str(item).lower() for item in payment_method_types]
             log(f"Stripe 可用支付方式: {methods}")
-            if "pix" not in methods:
-                raise RuntimeError(
-                    f"{PIX_UNAVAILABLE_ERROR}: {stage} amount={current_amount}; "
-                    f"payment_method_types={methods}"
-                )
         return current_ctx, current_amount
 
     log(
