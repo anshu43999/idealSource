@@ -39,7 +39,7 @@ PIX_DIR = ROOT / "pix"
 PIX_SCRIPT_PATH = PIX_DIR / "pix_extract.py"
 PIX_PROXY_SEED_PATH = PIX_DIR / "proxy_seeds.txt"
 PIX_PRIMARY_PROXY_SEED_PATH = PIX_DIR / "br_proxy_seeds.txt"
-PIX_PROMOTION_PROXY_SEED_PATH = PIX_DIR / "vn_proxy_seeds.txt"
+PIX_PROMOTION_PROXY_SEED_PATH = PIX_PRIMARY_PROXY_SEED_PATH
 PIX_TOKEN_PATH = PIX_DIR / "token.txt"
 TWINT_DIR = ROOT / "twint"
 TWINT_SCRIPT_PATH = TWINT_DIR / "twint_extract.py"
@@ -71,7 +71,7 @@ PAYMENT_METHODS: dict[str, dict[str, Any]] = {
     },
     "pix": {
         "label": "PIX",
-        "flow": "BR/VN/BR",
+        "flow": "BR/BR/BR",
         "available": True,
         "script_path": PIX_SCRIPT_PATH,
         "result_marker": "PIX 最终支付 URL:",
@@ -108,7 +108,7 @@ PAYMENT_METHODS: dict[str, dict[str, Any]] = {
 
 PAYMENT_CHAIN_DEFAULTS: dict[str, tuple[str, str, str]] = {
     "ideal": ("NL", "VN", "NL"),
-    "pix": ("BR", "VN", "BR"),
+    "pix": ("BR", "BR", "BR"),
     "kakao_pay": ("KR", "VN", "KR"),
     "twint": ("CH", "VN", "CH"),
     "upi": ("IN", "VN", "IN"),
@@ -395,13 +395,16 @@ def build_environment(
     manual_provider_proxy_file = ""
     default_chain = PAYMENT_CHAIN_DEFAULTS.get(payment_method)
     if default_chain:
-        bootstrap_country = clean_country_code(payload, "bootstrap_country", default_chain[0])
-        promotion_country = (
-            clean_country_codes(payload, "promotion_country", default_chain[1])
-            if payment_method == "pix"
-            else clean_country_code(payload, "promotion_country", default_chain[1])
-        )
-        provider_country = clean_country_code(payload, "provider_country", default_chain[2])
+        if payment_method == "pix":
+            bootstrap_country = "BR"
+            promotion_country = "BR"
+            provider_country = "BR"
+        else:
+            bootstrap_country = clean_country_code(payload, "bootstrap_country", default_chain[0])
+            promotion_country = clean_country_code(
+                payload, "promotion_country", default_chain[1]
+            )
+            provider_country = clean_country_code(payload, "provider_country", default_chain[2])
         checkout_country = bootstrap_country
         payment_method_country = provider_country
     elif payment_method == "blik":

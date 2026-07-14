@@ -18,7 +18,7 @@
   PIX_CONFIRM_INLINE_PM=0   # 默认按 gpthel 流程：先创建 PM，再 confirm 引用 PM
   PIX_UPDATE_TAX_REGION=1   # 首次 init 前强制把 ChatGPT/Stripe 税区同步为 BR
   PIX_BOOTSTRAP_COUNTRY=BR  # Checkout / 首次 Stripe init 地区
-  PIX_PROMOTION_COUNTRY=VN  # 唯一一次 checkout/update + BR taxes 地区
+  PIX_PROMOTION_COUNTRY=BR  # checkout/update + taxes 同样固定走 BR
   PIX_PROVIDER_COUNTRY=BR   # Stripe refresh / 税务 / PM / approve 地区
   PIX_MAX_RETRY=5
   PIX_PROVIDER_PER_CHECKOUT=1
@@ -103,14 +103,10 @@ def configured_countries(name: str, default: str) -> list[str]:
     return countries
 
 
-PIX_BOOTSTRAP_COUNTRY = configured_country(
-    "PIX_BOOTSTRAP_COUNTRY", os.environ.get("PIX_CHECKOUT_COUNTRY", "BR")
-)
-PIX_PROMOTION_COUNTRIES = configured_countries("PIX_PROMOTION_COUNTRY", "VN")
-PIX_PROMOTION_COUNTRY = PIX_PROMOTION_COUNTRIES[0]
-PIX_PROVIDER_COUNTRY = configured_country(
-    "PIX_PROVIDER_COUNTRY", os.environ.get("PIX_BILLING_COUNTRY", "BR")
-)
+PIX_BOOTSTRAP_COUNTRY = "BR"
+PIX_PROMOTION_COUNTRIES = ["BR"]
+PIX_PROMOTION_COUNTRY = "BR"
+PIX_PROVIDER_COUNTRY = "BR"
 
 COUNTRY_CURRENCY = {
     "BR": "BRL",
@@ -894,7 +890,7 @@ def checkout_proxy_file() -> Path:
 
 def promotion_proxy_file() -> Path:
     raw = os.environ.get("PIX_PROMOTION_PROXY_FILE", "").strip()
-    return Path(raw).expanduser() if raw else SCRIPT_DIR / "vn_proxy_seeds.txt"
+    return Path(raw).expanduser() if raw else SCRIPT_DIR / "br_proxy_seeds.txt"
 
 
 def provider_proxy_file() -> Path:
@@ -1658,7 +1654,6 @@ def pix_billing_profile() -> dict[str, str]:
     env_map = {
         "email": "PIX_EMAIL",
         "name": "PIX_NAME",
-        "country": "PIX_BILLING_COUNTRY",
         "line1": "PIX_LINE1",
         "line2": "PIX_LINE2",
         "city": "PIX_CITY",
@@ -1669,7 +1664,7 @@ def pix_billing_profile() -> dict[str, str]:
         value = os.environ.get(env_name, "").strip()
         if value:
             profile[key] = value
-    profile["country"] = normalize_country(profile.get("country", "BR"))
+    profile["country"] = "BR"
     configured_cpf = os.environ.get("PIX_TAX_ID", "").strip()
     profile["tax_id"] = normalize_cpf(configured_cpf) if configured_cpf else generate_random_cpf()
     return profile
@@ -2603,7 +2598,7 @@ def run_provider_flow(
     stop_event: Event | None = None,
     chatgpt_session: requests.Session | None = None,
 ) -> tuple[str, list[str]]:
-    checkout_country = normalize_country(os.environ.get("PIX_CHECKOUT_COUNTRY", PIX_BOOTSTRAP_COUNTRY))
+    checkout_country = PIX_BOOTSTRAP_COUNTRY
     stripe_pk = checkout.get("stripe_pk") or DEFAULT_STRIPE_PK
 
     def inspect_init(payload: dict[str, Any], stage: str) -> tuple[dict[str, Any], int]:
@@ -2779,7 +2774,7 @@ def run_once(
     if stop_event and stop_event.is_set():
         raise RuntimeError("任务已停止，跳过本轮")
     device_id = str(uuid.uuid4())
-    checkout_country = normalize_country(os.environ.get("PIX_CHECKOUT_COUNTRY", PIX_BOOTSTRAP_COUNTRY))
+    checkout_country = PIX_BOOTSTRAP_COUNTRY
     billing = pix_billing_profile()
     log(f"开始 PIX 提取，第 {attempt}/{max_retry} 次")
     log(
@@ -3125,11 +3120,9 @@ def run_single_link_parallel_mode(
     requested_workers = env_int("PIX_WORKERS", 1)
     worker_limit = env_int("PIX_WORKERS_MAX", requested_workers)
     workers = min(max(1, requested_workers), max(1, worker_limit), pix_retry)
-    checkout_country = normalize_country(os.environ.get("PIX_CHECKOUT_COUNTRY", PIX_BOOTSTRAP_COUNTRY))
+    checkout_country = PIX_BOOTSTRAP_COUNTRY
     checkout_currency = currency_for_country(checkout_country)
-    configured_pm_country = normalize_country(
-        os.environ.get("PIX_BILLING_COUNTRY", PIX_PROVIDER_COUNTRY)
-    )
+    configured_pm_country = PIX_PROVIDER_COUNTRY
     max_blocked = env_int("PIX_MAX_APPROVE_BLOCKED", pix_retry)
     approve_blocked_count = 0
     last_error = ""
@@ -3217,11 +3210,9 @@ def run_single_link_mode(
     checkout_retry = env_int("PIX_CHECKOUT_RETRY_MAX", 5)
     provider_retry = env_int("PIX_PROVIDER_RETRY_MAX", 3)
     pix_retry = env_int("PIX_MAX_RETRY", 5)
-    checkout_country = normalize_country(os.environ.get("PIX_CHECKOUT_COUNTRY", PIX_BOOTSTRAP_COUNTRY))
+    checkout_country = PIX_BOOTSTRAP_COUNTRY
     checkout_currency = currency_for_country(checkout_country)
-    configured_pm_country = normalize_country(
-        os.environ.get("PIX_BILLING_COUNTRY", PIX_PROVIDER_COUNTRY)
-    )
+    configured_pm_country = PIX_PROVIDER_COUNTRY
     max_blocked = env_int("PIX_MAX_APPROVE_BLOCKED", pix_retry)
     approve_blocked_count = 0
     last_error = ""

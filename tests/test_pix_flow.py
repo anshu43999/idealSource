@@ -81,6 +81,7 @@ def test_pix_update_runs_before_first_stripe_init(monkeypatch):
     events = []
     chatgpt = FakeChatgptSession()
     update_sessions = []
+    update_countries = []
     billing = pix.pix_billing_profile()
     stripe = FakeStripeSession()
     checkout = {
@@ -103,8 +104,9 @@ def test_pix_update_runs_before_first_stripe_init(monkeypatch):
     monkeypatch.setattr(
         pix,
         "update_checkout_promotion",
-        lambda session, *args, **kwargs: (
+        lambda session, checkout, country: (
             update_sessions.append(session),
+            update_countries.append(country),
             events.append("update"),
         ),
     )
@@ -160,7 +162,7 @@ def test_pix_update_runs_before_first_stripe_init(monkeypatch):
         "access-token",
         "",
         "http://br-checkout-proxy",
-        "http://vn-promotion-proxy",
+        "http://br-promotion-proxy",
         "http://br-provider-proxy",
         [],
         "device-test",
@@ -173,9 +175,19 @@ def test_pix_update_runs_before_first_stripe_init(monkeypatch):
     assert qr_urls == []
     assert events == ["update", "chatgpt-tax", "stripe-tax", "init", "pm", "confirm"]
     assert update_sessions == [chatgpt, chatgpt]
+    assert update_countries == ["BR"]
 
 
 def test_pix_br_processor_entity_defaults_to_openai_llc(monkeypatch):
     monkeypatch.delenv("PIX_PROCESSOR_ENTITY", raising=False)
 
     assert pix.processor_entity_for_country("BR") == "openai_llc"
+
+
+def test_pix_country_chain_is_always_br(monkeypatch):
+    monkeypatch.delenv("PIX_PROMOTION_PROXY_FILE", raising=False)
+
+    assert pix.PIX_BOOTSTRAP_COUNTRY == "BR"
+    assert pix.PIX_PROMOTION_COUNTRIES == ["BR"]
+    assert pix.PIX_PROVIDER_COUNTRY == "BR"
+    assert pix.promotion_proxy_file().name == "br_proxy_seeds.txt"

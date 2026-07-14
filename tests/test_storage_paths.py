@@ -31,6 +31,13 @@ class StoragePathTests(unittest.TestCase):
             with self.subTest(payment_method=payment_method):
                 self.assertIsNotNone(ideal_ui.manual_proxy_paths(payment_method))
 
+    def test_pix_uses_one_br_proxy_pool_for_all_stages(self) -> None:
+        primary_path, promotion_path = ideal_ui.manual_proxy_paths("pix")
+
+        self.assertEqual(primary_path, promotion_path)
+        self.assertEqual(ideal_ui.PAYMENT_CHAIN_DEFAULTS["pix"], ("BR", "BR", "BR"))
+        self.assertEqual(ideal_ui.PAYMENT_METHODS["pix"]["flow"], "BR/BR/BR")
+
 
 if __name__ == "__main__":
     unittest.main()
