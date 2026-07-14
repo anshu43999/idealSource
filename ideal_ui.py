@@ -39,7 +39,7 @@ PIX_DIR = ROOT / "pix"
 PIX_SCRIPT_PATH = PIX_DIR / "pix_extract.py"
 PIX_PROXY_SEED_PATH = PIX_DIR / "proxy_seeds.txt"
 PIX_PRIMARY_PROXY_SEED_PATH = PIX_DIR / "br_proxy_seeds.txt"
-PIX_PROMOTION_PROXY_SEED_PATH = PIX_DIR / "vn_proxy_seeds.txt"
+PIX_PROMOTION_PROXY_SEED_PATH = PIX_PRIMARY_PROXY_SEED_PATH
 PIX_TOKEN_PATH = PIX_DIR / "token.txt"
 TWINT_DIR = ROOT / "twint"
 TWINT_SCRIPT_PATH = TWINT_DIR / "twint_extract.py"
@@ -71,7 +71,7 @@ PAYMENT_METHODS: dict[str, dict[str, Any]] = {
     },
     "pix": {
         "label": "PIX",
-        "flow": "BR/VN/BR",
+        "flow": "BR/BR/BR",
         "available": True,
         "script_path": PIX_SCRIPT_PATH,
         "result_marker": "PIX 最终支付 URL:",
@@ -108,7 +108,7 @@ PAYMENT_METHODS: dict[str, dict[str, Any]] = {
 
 PAYMENT_CHAIN_DEFAULTS: dict[str, tuple[str, str, str]] = {
     "ideal": ("NL", "VN", "NL"),
-    "pix": ("BR", "VN", "BR"),
+    "pix": ("BR", "BR", "BR"),
     "kakao_pay": ("KR", "VN", "KR"),
     "twint": ("CH", "VN", "CH"),
     "upi": ("IN", "VN", "IN"),
@@ -289,6 +289,7 @@ def resolve_proxy_file(value: str, label: str) -> str:
 def prepare_persistent_files(payload: dict[str, Any], payment_method: str) -> tuple[dict[str, Any], int]:
     if payment_method in MANUAL_PROXY_METHODS:
         primary_path, promotion_path = manual_proxy_paths(payment_method) or (KAKAO_KR_PROXY_SEED_PATH, KAKAO_VN_PROXY_SEED_PATH)
+        shared_proxy_path = primary_path == promotion_path
         kr_text = clean_text(
             payload,
             "manual_primary_proxies",
@@ -303,13 +304,20 @@ def prepare_persistent_files(payload: dict[str, Any], payment_method: str) -> tu
         )
         kr_count = count_proxy_text(kr_text)
         vn_count = count_proxy_text(vn_text)
+        if shared_proxy_path and not kr_count and vn_count:
+            kr_text = vn_text
+            kr_count = vn_count
+            vn_text = ""
+            vn_count = 0
         if kr_count:
             write_text_atomic(primary_path, kr_text.rstrip() + "\n")
         else:
             kr_count = count_proxy_lines(str(primary_path))
             if not kr_count:
                 raise ValueError("请填写 Kakao KR 代理")
-        if vn_count:
+        if shared_proxy_path:
+            vn_count = 0
+        elif vn_count:
             write_text_atomic(promotion_path, vn_text.rstrip() + "\n")
         else:
             vn_count = count_proxy_lines(str(promotion_path))
@@ -388,11 +396,7 @@ def build_environment(
     default_chain = PAYMENT_CHAIN_DEFAULTS.get(payment_method)
     if default_chain:
         bootstrap_country = clean_country_code(payload, "bootstrap_country", default_chain[0])
-        promotion_country = (
-            clean_country_codes(payload, "promotion_country", default_chain[1])
-            if payment_method == "pix"
-            else clean_country_code(payload, "promotion_country", default_chain[1])
-        )
+        promotion_country = clean_country_code(payload, "promotion_country", default_chain[1])
         provider_country = clean_country_code(payload, "provider_country", default_chain[2])
         checkout_country = bootstrap_country
         payment_method_country = provider_country
@@ -1056,7 +1060,9 @@ class ScriptRunner:
                 manual_paths = manual_proxy_paths(method_id)
                 if manual_paths:
                     primary_path, promotion_path = manual_paths
-                    proxy_count = count_proxy_lines(str(primary_path)) + count_proxy_lines(str(promotion_path))
+                    proxy_count = count_proxy_lines(str(primary_path))
+                    if promotion_path != primary_path:
+                        proxy_count += count_proxy_lines(str(promotion_path))
                 payment_storage[method_id] = {
                     "proxy_count": proxy_count,
                     "token_file": method_token_file.is_file(),

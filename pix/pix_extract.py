@@ -18,7 +18,7 @@
   PIX_CONFIRM_INLINE_PM=0   # 默认按 gpthel 流程：先创建 PM，再 confirm 引用 PM
   PIX_UPDATE_TAX_REGION=1   # BR PIX 流程固定同步 ChatGPT/Stripe 税务地区
   PIX_BOOTSTRAP_COUNTRY=BR  # Checkout / 首次 Stripe init 地区
-  PIX_PROMOTION_COUNTRY=VN,US  # checkout/update 地区，按顺序尝试
+  PIX_PROMOTION_COUNTRY=BR     # checkout/update 地区；PIX 默认全阶段 BR
   PIX_PROVIDER_COUNTRY=BR   # Stripe refresh / 税务 / PM / approve 地区
   PIX_MAX_RETRY=5
   PIX_PROVIDER_PER_CHECKOUT=1
@@ -106,7 +106,7 @@ def configured_countries(name: str, default: str) -> list[str]:
 PIX_BOOTSTRAP_COUNTRY = configured_country(
     "PIX_BOOTSTRAP_COUNTRY", os.environ.get("PIX_CHECKOUT_COUNTRY", "BR")
 )
-PIX_PROMOTION_COUNTRIES = configured_countries("PIX_PROMOTION_COUNTRY", "VN")
+PIX_PROMOTION_COUNTRIES = configured_countries("PIX_PROMOTION_COUNTRY", "BR")
 PIX_PROMOTION_COUNTRY = PIX_PROMOTION_COUNTRIES[0]
 PIX_PROVIDER_COUNTRY = configured_country(
     "PIX_PROVIDER_COUNTRY", os.environ.get("PIX_BILLING_COUNTRY", "BR")
@@ -894,7 +894,7 @@ def checkout_proxy_file() -> Path:
 
 def promotion_proxy_file() -> Path:
     raw = os.environ.get("PIX_PROMOTION_PROXY_FILE", "").strip()
-    return Path(raw).expanduser() if raw else SCRIPT_DIR / "vn_proxy_seeds.txt"
+    return Path(raw).expanduser() if raw else checkout_proxy_file()
 
 
 def provider_proxy_file() -> Path:

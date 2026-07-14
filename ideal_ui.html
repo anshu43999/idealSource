@@ -864,7 +864,7 @@
   <div class="toast" id="toast" role="status"></div>
 
   <script>
-    const CONFIG_VERSION = '2026-07-12-country-chain-storage';
+    const CONFIG_VERSION = '2026-07-14-pix-br-only';
     const form = document.getElementById('configForm');
     const startButton = document.getElementById('startButton');
     const stopButton = document.getElementById('stopButton');
@@ -902,7 +902,7 @@
     const providerCountryInput = document.getElementById('providerCountry');
     const COUNTRY_CHAIN_DEFAULTS = {
       ideal: { bootstrap: 'NL', promotion: 'VN', provider: 'NL' },
-      pix: { bootstrap: 'BR', promotion: 'VN', provider: 'BR' },
+      pix: { bootstrap: 'BR', promotion: 'BR', provider: 'BR' },
       kakao_pay: { bootstrap: 'KR', promotion: 'VN', provider: 'KR' },
       twint: { bootstrap: 'CH', promotion: 'VN', provider: 'CH' },
       upi: { bootstrap: 'IN', promotion: 'VN', provider: 'IN' },
@@ -980,6 +980,7 @@
     function countryChainForMethod(methodId = paymentMethodInput.value) {
       const defaults = COUNTRY_CHAIN_DEFAULTS[methodId];
       if (!defaults) return null;
+      if (methodId === 'pix') return { ...defaults };
       const saved = paymentCountryChains[methodId] || {};
       const source = methodId === paymentMethodInput.value
         ? {
@@ -990,9 +991,7 @@
         : saved;
       return {
         bootstrap: normalizeCountryCode(source.bootstrap, defaults.bootstrap),
-        promotion: methodId === 'pix'
-          ? normalizePromotionCountries(source.promotion, defaults.promotion)
-          : normalizeCountryCode(source.promotion, defaults.promotion),
+        promotion: normalizeCountryCode(source.promotion, defaults.promotion),
         provider: normalizeCountryCode(source.provider, defaults.provider),
       };
     }
@@ -1005,12 +1004,17 @@
     function loadCountryChain(methodId = paymentMethodInput.value) {
       const defaults = COUNTRY_CHAIN_DEFAULTS[methodId];
       if (!defaults) return;
+      if (methodId === 'pix') {
+        paymentCountryChains[methodId] = { ...defaults };
+        bootstrapCountryInput.value = defaults.bootstrap;
+        promotionCountryInput.value = defaults.promotion;
+        providerCountryInput.value = defaults.provider;
+        return;
+      }
       const saved = paymentCountryChains[methodId] || {};
       const chain = {
         bootstrap: normalizeCountryCode(saved.bootstrap, defaults.bootstrap),
-        promotion: methodId === 'pix'
-          ? normalizePromotionCountries(saved.promotion, defaults.promotion)
-          : normalizeCountryCode(saved.promotion, defaults.promotion),
+        promotion: normalizeCountryCode(saved.promotion, defaults.promotion),
         provider: normalizeCountryCode(saved.provider, defaults.provider),
       };
       paymentCountryChains[methodId] = chain;
@@ -1084,18 +1088,21 @@
       bankField.hidden = isBLIK || isKakao || isPix || isTwint || isUpi;
       proxySeedsField.hidden = isManualProxyMethod;
       kakaoKrProxyField.hidden = !isManualProxyMethod;
-      kakaoVnProxyField.hidden = !isManualProxyMethod;
+      kakaoVnProxyField.hidden = !isManualProxyMethod || isPix;
       countryChainField.hidden = !isConfigurableChain;
       for (const input of [bootstrapCountryInput, promotionCountryInput, providerCountryInput]) {
-        input.disabled = !isConfigurableChain;
+        input.disabled = !isConfigurableChain || isPix;
+      }
+      if (isPix) {
+        bootstrapCountryInput.value = chain.bootstrap;
+        promotionCountryInput.value = chain.promotion;
+        providerCountryInput.value = chain.provider;
       }
       providerCountryInput.readOnly = isManualProxyMethod;
       if (isManualProxyMethod) providerCountryInput.value = bootstrapCountryInput.value.trim().toUpperCase() || providerCountryInput.value;
-      promotionCountryInput.maxLength = isPix ? 80 : 2;
-      promotionCountryInput.pattern = isPix
-        ? '[A-Za-z]{2}(\\s*,\\s*[A-Za-z]{2})*'
-        : '[A-Za-z]{2}';
-      promotionCountryInput.placeholder = isPix ? 'VN,US' : '';
+      promotionCountryInput.maxLength = 2;
+      promotionCountryInput.pattern = '[A-Za-z]{2}';
+      promotionCountryInput.placeholder = '';
       if (isConfigurableChain) {
         document.getElementById('countryChainHint').textContent =
           isPix
@@ -1111,7 +1118,7 @@
       document.getElementById('maxBatchesLabel').textContent = isBLIK
         ? 'BLIK总重试'
         : isManualProxyMethod
-        ? 'Kakao重试轮数'
+        ? `${paymentLabel}重试轮数`
         : isPix
         ? 'PIX总重试'
         : isTwint
@@ -1125,7 +1132,7 @@
       document.getElementById('proxySectionDescription').textContent = isBLIK
         ? '只填写 sticky proxy seed，运行时派生 PL/PL/PL'
         : isManualProxyMethod
-        ? 'Kakao 改为手动填写 KR / VN 代理，不再自动改写 country'
+        ? `${paymentLabel} 手动填写 ${chain.bootstrap} / ${chain.promotion} 代理，不再自动改写 country`
         : `只填写 sticky proxy seed，运行时派生 ${chainFlow}`;
       proxySeeds.placeholder = isBLIK
         ? '粘贴 sticky 代理 seed，每行一条；脚本会自动改写 country/region 为 PL'
@@ -1133,7 +1140,7 @@
       document.getElementById('proxySeedsHint').textContent = isBLIK
         ? '点击启动后保存到 BLIK 专用 proxy_seeds.txt。每条 Seed 固定派生：PL checkout → PL Stripe/BLIK → PL approve；本次失败的 Seed 不会再次抽取。'
         : isManualProxyMethod
-        ? 'Kakao 会分别保存 KR 与 VN 代理文件；checkout/provider 走 KR，checkout/update 走 VN，不再自动改写 country/region。'
+        ? `${paymentLabel} 会分别保存 ${chain.bootstrap} 与 ${chain.promotion} 代理文件；checkout/provider 走 ${chain.bootstrap}，checkout/update 走 ${chain.promotion}，不再自动改写 country/region。`
         : `点击启动后保存到 ${isPix ? 'PIX 专用 ' : isTwint ? 'TWINT 专用 ' : isUpi ? 'UPI 专用 ' : ''}proxy_seeds.txt。每条 Seed 固定派生：${chain.bootstrap} checkout/Bootstrap Stripe init → ${chain.promotion} checkout/update → ${chain.provider} Stripe refresh/taxes/${paymentStageLabel}/approve；本次失败的 Seed 不会再次抽取。`;
       document.getElementById('proxyChainValue').textContent = isBLIK
         ? 'PL → PL Stripe/BLIK → PL approve'
@@ -1153,7 +1160,7 @@
           `用于 ${chain.bootstrap} checkout / Bootstrap Stripe init / ${chain.provider} Stripe refresh / taxes / approve。`;
         document.getElementById('kakaoVnProxyHint').textContent =
           `只用于 ${chain.promotion} checkout/update，程序不会再自动改写 country/region。`;
-        document.getElementById('seedCountLabel').textContent = `${chain.bootstrap}/${chain.promotion}代理`;
+        document.getElementById('seedCountLabel').textContent = isPix ? `${chain.bootstrap}代理` : `${chain.bootstrap}/${chain.promotion}代理`;
         document.querySelector('label[for="kakaoKrProxies"]').textContent = `${chain.bootstrap} 代理`;
         document.querySelector('label[for="kakaoVnProxies"]').textContent = `${chain.promotion} 代理`;
       } else {
