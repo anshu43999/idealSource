@@ -33,6 +33,7 @@
   PIX_PROXY_SKIP_FAILED=1   # 普通流程失败下次软跳过
   PIX_PROXY_REMOVE_FAILED=1 # 明确的代理失败会从 proxy_seeds.txt 移除
   PIX_PROXY_DEFAULT_SCHEME=http # 裸代理默认协议；Mars SOCKS5 可设 socks5h
+  PIX_POLL_REQUEST_TIMEOUT=10 # Poll 单次网络请求超时；总时限仍由 PIX_POLL_TIMEOUT 控制
   PIX_PROXY_FAIL_COOLDOWN=180 # 失败代理冷却秒数，0 表示按旧逻辑一直跳过
   PIX_PROXY_REMOVE_AFTER_FAILS=3 # 已复用代理健康类失败累计 3 次移除；普通代理失败 1 次移除
   PIX_ZERO_CACHE=1          # 记录 checkout 的 0 元观察结果，供日志和排查使用
@@ -447,6 +448,11 @@ def pix_proxy_chain(proxy_seed: str) -> tuple[str, str, str]:
     ):
         raise RuntimeError("代理地区改写改变了 sticky seed，已拒绝混用代理链")
     return checkout_proxy, promotion_proxies[0], provider_proxy
+
+
+def pix_manual_proxy_chain(proxy: str) -> tuple[str, str, str]:
+    """Keep the same BR exit for every stage of a manual PIX attempt."""
+    return proxy, proxy, proxy
 
 
 def log_pix_proxy_chain(proxy_seed: str, checkout_proxy: str, promotion_proxy: str, provider_proxy: str) -> None:
@@ -2452,7 +2458,21 @@ def poll_payment_page(
     last_payload: dict[str, Any] = {}
     last_summary = ""
     while time.time() < deadline:
-        resp = stripe.get(url, params=params, timeout=DEFAULT_TIMEOUT)
+        remaining = max(1, int(deadline - time.time()))
+        request_timeout = min(
+            DEFAULT_TIMEOUT,
+            env_int("PIX_POLL_REQUEST_TIMEOUT", 10),
+            remaining,
+        )
+        try:
+            resp = stripe.get(url, params=params, timeout=request_timeout)
+        except Exception as exc:
+            network_error = f"poll network error: {type(exc).__name__}: {str(exc)[:180]}"
+            if network_error != last_error:
+                log(network_error, "[WARN] ")
+            last_error = network_error
+            time.sleep(1)
+            continue
         if resp.status_code >= 400:
             dump_http(resp, "poll_error", params, "GET", url, force=True)
             if is_checkout_not_active_error(resp.text):
@@ -3263,9 +3283,9 @@ def run_single_link_mode(
             attempted_seed_keys.add(chain_key)
             try:
                 if manual_proxy_mode:
-                    checkout_proxy = proxy_seed
-                    promotion_proxy = random.choice(promotion_pool)
-                    provider_proxy = random.choice(provider_pool) if provider_pool and provider_pool is not checkout_pool else checkout_proxy
+                    checkout_proxy, promotion_proxy, provider_proxy = pix_manual_proxy_chain(
+                        proxy_seed
+                    )
                     log(
                         "Manual proxy chain: "
                         f"checkout={proxy_label(checkout_proxy)}, "

@@ -44,6 +44,25 @@ class FakeChatgptSession:
         )
 
 
+class FlakyPollStripeSession:
+    def __init__(self):
+        self.calls = 0
+        self.timeouts = []
+
+    def get(self, url, params=None, timeout=None):
+        self.calls += 1
+        self.timeouts.append(timeout)
+        if self.calls == 1:
+            raise RuntimeError("Connection reset by peer")
+        return SimpleNamespace(
+            status_code=200,
+            text='{"redirect":"https://payments.example/pix"}',
+            url=url,
+            headers={},
+            json=lambda: {"redirect": "https://payments.example/pix"},
+        )
+
+
 def test_pix_checkout_defers_promotion_to_update(monkeypatch):
     monkeypatch.setenv("PP_PROMO_MODE", "campaign")
     monkeypatch.setenv("PP_PROMO_ID", "plus-1-month-free")
@@ -191,3 +210,36 @@ def test_pix_country_chain_is_always_br(monkeypatch):
     assert pix.PIX_PROMOTION_COUNTRIES == ["BR"]
     assert pix.PIX_PROVIDER_COUNTRY == "BR"
     assert pix.promotion_proxy_file().name == "br_proxy_seeds.txt"
+
+
+def test_pix_manual_chain_reuses_one_br_proxy():
+    proxy = "http://br-sticky-proxy"
+
+    assert pix.pix_manual_proxy_chain(proxy) == (proxy, proxy, proxy)
+
+
+def test_pix_poll_retries_transient_network_error(monkeypatch):
+    stripe = FlakyPollStripeSession()
+    monkeypatch.setenv("PIX_POLL_TIMEOUT", "5")
+    monkeypatch.setenv("PIX_POLL_REQUEST_TIMEOUT", "2")
+    monkeypatch.setattr(pix.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(pix, "dump_http", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pix, "log", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        pix,
+        "extract_redirect_url",
+        lambda payload: str(payload.get("redirect") or ""),
+    )
+
+    redirect_url, qr_urls = pix.poll_payment_page(
+        stripe,
+        {"cs_id": "cs_test_poll"},
+        "pk_test_pix",
+        {},
+        current_pm_id="pm_test_pix",
+    )
+
+    assert redirect_url == "https://payments.example/pix"
+    assert qr_urls == []
+    assert stripe.calls == 2
+    assert stripe.timeouts == [2, 2]
