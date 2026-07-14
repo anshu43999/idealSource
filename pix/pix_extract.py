@@ -18,7 +18,7 @@
   PIX_CONFIRM_INLINE_PM=0   # 默认按 gpthel 流程：先创建 PM，再 confirm 引用 PM
   PIX_UPDATE_TAX_REGION=1   # 首次 init 前强制把 ChatGPT/Stripe 税区同步为 BR
   PIX_BOOTSTRAP_COUNTRY=BR  # Checkout / 首次 Stripe init 地区
-  PIX_PROMOTION_COUNTRY=BR  # checkout/update + taxes 同样固定走 BR
+  PIX_PROMOTION_COUNTRY=BR  # 优惠与税务同步固定走第二组 BR 代理
   PIX_PROVIDER_COUNTRY=BR   # Stripe refresh / 税务 / PM / approve 地区
   PIX_MAX_RETRY=5
   PIX_PROVIDER_PER_CHECKOUT=1
@@ -450,9 +450,42 @@ def pix_proxy_chain(proxy_seed: str) -> tuple[str, str, str]:
     return checkout_proxy, promotion_proxies[0], provider_proxy
 
 
-def pix_manual_proxy_chain(proxy: str) -> tuple[str, str, str]:
-    """Keep the same BR exit for every stage of a manual PIX attempt."""
-    return proxy, proxy, proxy
+_KNOWN_PROXY_COUNTRIES = {
+    "BR", "VN", "KR", "NL", "CH", "IN", "PL", "US", "DE", "FR", "BE", "JP"
+}
+
+
+def proxy_country_tags(proxy: str) -> set[str]:
+    parsed = urlsplit(normalize_proxy_url(proxy))
+    credentials = f"{unquote(parsed.username or '')}-{unquote(parsed.password or '')}"
+    tags = {
+        match.group(1).upper()
+        for match in re.finditer(r"(?i)(?:^|[-_=])([a-z]{2})(?=[-_=]|$)", credentials)
+    }
+    return tags & _KNOWN_PROXY_COUNTRIES
+
+
+def validate_manual_pix_br_proxy(proxy: str, stage: str) -> None:
+    tags = proxy_country_tags(proxy)
+    if tags and tags != {"BR"}:
+        raise RuntimeError(
+            f"{stage} 代理必须是 BR，检测到: {','.join(sorted(tags))} ({proxy_label(proxy)})"
+        )
+    if not tags:
+        log(f"{stage} 代理未包含可识别国家标记，按手动 BR 代理继续: {proxy_label(proxy)}", "[WARN] ")
+
+
+def pix_manual_proxy_chain(
+    checkout_proxy: str,
+    promotion_proxy: str,
+    provider_proxy: str = "",
+) -> tuple[str, str, str]:
+    """Use independent BR pools for the main and promotion/tax stages."""
+    provider_proxy = provider_proxy or checkout_proxy
+    validate_manual_pix_br_proxy(checkout_proxy, "主链路 BR")
+    validate_manual_pix_br_proxy(promotion_proxy, "优惠/税务 BR")
+    validate_manual_pix_br_proxy(provider_proxy, "Provider BR")
+    return checkout_proxy, promotion_proxy, provider_proxy
 
 
 def log_pix_proxy_chain(proxy_seed: str, checkout_proxy: str, promotion_proxy: str, provider_proxy: str) -> None:
@@ -896,7 +929,7 @@ def checkout_proxy_file() -> Path:
 
 def promotion_proxy_file() -> Path:
     raw = os.environ.get("PIX_PROMOTION_PROXY_FILE", "").strip()
-    return Path(raw).expanduser() if raw else SCRIPT_DIR / "br_proxy_seeds.txt"
+    return Path(raw).expanduser() if raw else SCRIPT_DIR / "vn_proxy_seeds.txt"
 
 
 def provider_proxy_file() -> Path:
@@ -2649,14 +2682,22 @@ def run_provider_flow(
     stripe = new_session(provider_proxy)
     stripe.headers.update({"User-Agent": random_user_agent(), "Accept-Language": payment_accept_language()})
 
+    log(
+        f"步骤 3/7：BR Stripe 初始化并校验 PIX，"
+        f"proxy={proxy_label(provider_proxy)} entity={checkout['processor_entity']}"
+    )
+    initial_init_payload = stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
+    _initial_ctx, initial_amount = inspect_init(initial_init_payload, "优惠前 BR")
+    log(f"步骤 3/7 完成：优惠前已包含 PIX，金额小单位={initial_amount}")
+
     promotion_country = PIX_PROMOTION_COUNTRY
     current_promotion_proxy = (
         promotion_proxy
         if manual_proxy_mode_enabled()
         else proxy_for_country(promotion_proxy, promotion_country)
     )
-    stage_label = f"{promotion_country} update + BR taxes"
-    log(f"{stage_label}: proxy={proxy_label(current_promotion_proxy)}")
+    stage_label = "BR 应用优惠并同步 BR 税务"
+    log(f"步骤 4/7：{stage_label}，proxy={proxy_label(current_promotion_proxy)}")
     promotion_chatgpt = chatgpt_session or build_chatgpt_session(
         access_token, device_id, checkout_proxy, session_token
     )
@@ -2672,25 +2713,25 @@ def run_provider_flow(
     except Exception as exc:
         if is_checkout_not_active_error(exc):
             raise
-        raise RuntimeError(f"首次 Stripe init 前 PIX 状态同步失败: {exc}") from exc
+        raise RuntimeError(f"BR 优惠/税务同步失败: {exc}") from exc
     record_proxy_result("promotion", current_promotion_proxy, True, "pix_state_sync_success")
+    log("步骤 4/7 完成：优惠和 BR 税务已同步")
 
     log(
-        f"{stage_label} 后执行唯一一次 {PIX_PROVIDER_COUNTRY} Stripe init: "
+        f"步骤 5/7：返回主链路 BR 并校验优惠金额，"
         f"proxy={proxy_label(provider_proxy)} entity={checkout['processor_entity']}"
     )
     init_payload = stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
     hosted_url = str(init_payload.get("stripe_hosted_url") or "")
-    ctx, amount = inspect_init(
-        init_payload, f"{promotion_country} update/taxes 后首次 {PIX_PROVIDER_COUNTRY} init"
-    )
+    ctx, amount = inspect_init(init_payload, "优惠后主链路 BR")
     record_checkout_zero_result(checkout_proxy, checkout_country, amount)
     if amount != 0:
         raise RuntimeError(
             f"0 元优惠未生效，当前金额小单位={amount}，已停止生成非 0 元 PIX 链"
         )
-    log("首次 Init 同时满足 amount=0 且包含 PIX，继续 PM → confirm → approve → poll")
+    log("步骤 5/7 完成：优惠后 amount=0 且仍包含 PIX")
 
+    log("步骤 6/7：BR 创建 PIX 二维码")
     pm_id = ""
     if env_bool("PIX_CONFIRM_INLINE_PM", False):
         log(
@@ -2726,6 +2767,7 @@ def run_provider_flow(
 
     approve_proxy = ""
     qr_urls: list[str] = []
+    log("步骤 7/7：BR approve/poll 并提取最终 PIX 二维码链接")
     try:
         redirect_url, qr_urls, approve_proxy = resolve_confirm_payload_pix(
             stripe,
@@ -2747,7 +2789,9 @@ def run_provider_flow(
         log(f"approve/confirm 后未拿到 redirect，刷新 Stripe init 后二次 confirm: {str(exc)[:180]}", "[WARN] ")
         init_payload = stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
         hosted_url = str(init_payload.get("stripe_hosted_url") or hosted_url or "")
-        ctx = build_ctx(init_payload, checkout)
+        ctx, retry_amount = inspect_init(init_payload, "二次 confirm 前主链路 BR")
+        if retry_amount != 0:
+            raise RuntimeError(f"二次 confirm 前优惠金额失效，当前金额小单位={retry_amount}")
         confirm_payload = stripe_confirm_pix(stripe, checkout["cs_id"], pm_id, stripe_pk, init_payload, ctx, checkout, hosted_url, billing)
         log("二次 Stripe confirm 成功, 解析跳转...")
         log_payment_page_summary("second_confirm", confirm_payload)
@@ -2776,6 +2820,7 @@ def run_provider_flow(
         if final_url and final_url != redirect_url:
             log(f"跟随 redirect 得到最终链: {final_url[:180]}")
             redirect_url = final_url
+        log("步骤 7/7 完成：已获取最终 PIX 二维码/支付链接")
 
     return redirect_url, list(dict.fromkeys(qr_urls))
 
@@ -3040,8 +3085,9 @@ def run_single_link_attempt(
         provider_proxy = ""
 
         log(f"开始第 {attempt}/{pix_retry} 次提链")
+        log("步骤 1/7：选择并校验 BR + BR 代理")
         log(
-            f"Step 1: 创建 ChatGPT checkout... checkout账单={checkout_country}/{checkout_currency}，"
+            f"步骤 2/7：BR 创建 checkout（无首段优惠）... checkout账单={checkout_country}/{checkout_currency}，"
             f"第 {attempt}/{pix_retry} 次，每次随机抽取最多 {checkout_retry} 个节点"
         )
         log(f"首次 PM 国家: {pm_country}")
@@ -3053,6 +3099,11 @@ def run_single_link_attempt(
             try:
                 checkout_proxy, promotion_proxy, provider_proxy = pix_proxy_chain(proxy_seed)
                 log_pix_proxy_chain(proxy_seed, checkout_proxy, promotion_proxy, provider_proxy)
+                log(
+                    "步骤 1/7 完成："
+                    f"主链路={proxy_label(checkout_proxy)}，"
+                    f"优惠/税务={proxy_label(promotion_proxy)}"
+                )
                 log(f"Checkout {checkout_index}/{len(checkout_candidates)}: {checkout_country}/{checkout_currency}, proxy={proxy_label(checkout_proxy)}")
                 zero_status, zero_amount, _zero_checked_at = checkout_zero_cache_status(checkout_proxy, checkout_country)
                 if zero_status == "ok":
@@ -3062,6 +3113,7 @@ def run_single_link_attempt(
                 chatgpt = build_chatgpt_session(access_token, device_id, checkout_proxy, session_token)
                 checkout = create_checkout(chatgpt, checkout_country)
                 log(f"代理访问 checkout 地址: {checkout_page_url(checkout)}")
+                log("步骤 2/7 完成：BR checkout 创建成功，首段未携带优惠")
                 checkout_proxy_used = checkout_proxy
                 break
             except Exception as exc:
@@ -3082,7 +3134,7 @@ def run_single_link_attempt(
 
         stripe_pk = checkout.get("stripe_pk") or DEFAULT_STRIPE_PK
         log(f"Stripe PK: {stripe_pk[:18]}...")
-        log(f"Step 2: 首次尝试 PM={pm_country}...")
+        log(f"准备执行步骤 3/7，PIX 账单国家={pm_country}")
 
         if stop_event.is_set():
             return attempt, "", "任务已停止，跳过本轮", False
@@ -3267,8 +3319,9 @@ def run_single_link_mode(
         provider_proxy = ""
 
         log(f"开始第 {attempt}/{pix_retry} 次提链")
+        log("步骤 1/7：选择并校验 BR + BR 代理")
         log(
-            f"Step 1: 创建 ChatGPT checkout... checkout账单={checkout_country}/{checkout_currency}，"
+            f"步骤 2/7：BR 创建 checkout（无首段优惠）... checkout账单={checkout_country}/{checkout_currency}，"
             f"第 {attempt}/{pix_retry} 次，每次随机抽取最多 {checkout_retry} 个节点"
         )
         log(f"  首次 PM 国家: {pm_country}")
@@ -3283,8 +3336,16 @@ def run_single_link_mode(
             attempted_seed_keys.add(chain_key)
             try:
                 if manual_proxy_mode:
-                    checkout_proxy, promotion_proxy, provider_proxy = pix_manual_proxy_chain(
+                    selected_promotion_proxy = random.choice(promotion_pool)
+                    selected_provider_proxy = (
                         proxy_seed
+                        if provider_pool is checkout_pool
+                        else random.choice(provider_pool)
+                    )
+                    checkout_proxy, promotion_proxy, provider_proxy = pix_manual_proxy_chain(
+                        proxy_seed,
+                        selected_promotion_proxy,
+                        selected_provider_proxy,
                     )
                     log(
                         "Manual proxy chain: "
@@ -3295,6 +3356,11 @@ def run_single_link_mode(
                 else:
                     checkout_proxy, promotion_proxy, provider_proxy = pix_proxy_chain(proxy_seed)
                     log_pix_proxy_chain(proxy_seed, checkout_proxy, promotion_proxy, provider_proxy)
+                log(
+                    "步骤 1/7 完成："
+                    f"主链路={proxy_label(checkout_proxy)}，"
+                    f"优惠/税务={proxy_label(promotion_proxy)}"
+                )
                 log(
                     f"Checkout {checkout_index}/{len(checkout_candidates)}: "
                     f"{checkout_country}/{checkout_currency}, proxy={proxy_label(checkout_proxy)}，"
@@ -3308,6 +3374,7 @@ def run_single_link_mode(
                 chatgpt = build_chatgpt_session(access_token, device_id, checkout_proxy, session_token)
                 checkout = create_checkout(chatgpt, checkout_country)
                 log(f"代理访问 checkout 地址: {checkout_page_url(checkout)}")
+                log("步骤 2/7 完成：BR checkout 创建成功，首段未携带优惠")
                 checkout_proxy_used = checkout_proxy
                 break
             except Exception as exc:
@@ -3332,7 +3399,7 @@ def run_single_link_mode(
 
         stripe_pk = checkout.get("stripe_pk") or DEFAULT_STRIPE_PK
         log(f"Stripe PK: {stripe_pk[:18]}...")
-        log(f"Step 2: 首次尝试 PM={pm_country}...")
+        log(f"准备执行步骤 3/7，PIX 账单国家={pm_country}")
 
         previous_log_context = getattr(_log_context, "prefix", "")
         _log_context.prefix = f"  [PM={pm_country}] "

@@ -31,12 +31,42 @@ class StoragePathTests(unittest.TestCase):
             with self.subTest(payment_method=payment_method):
                 self.assertIsNotNone(ideal_ui.manual_proxy_paths(payment_method))
 
-    def test_pix_uses_one_br_proxy_pool_for_all_stages(self) -> None:
+    def test_pix_uses_two_br_proxy_pools(self) -> None:
         primary_path, promotion_path = ideal_ui.manual_proxy_paths("pix")
 
-        self.assertEqual(primary_path, promotion_path)
+        self.assertNotEqual(primary_path, promotion_path)
+        self.assertEqual(primary_path.name, "br_proxy_seeds.txt")
+        self.assertEqual(promotion_path.name, "vn_proxy_seeds.txt")
         self.assertEqual(ideal_ui.PAYMENT_CHAIN_DEFAULTS["pix"], ("BR", "BR", "BR"))
         self.assertEqual(ideal_ui.PAYMENT_METHODS["pix"]["flow"], "BR/BR/BR")
+
+    def test_pix_environment_maps_both_br_proxy_files(self) -> None:
+        primary_path = Path("C:/proxy/primary.txt")
+        promotion_path = Path("C:/proxy/promotion.txt")
+        payload = {
+            "token": "test-token",
+            "proxy_seed_file": str(primary_path),
+            "manual_checkout_proxy_file": str(primary_path),
+            "manual_provider_proxy_file": str(primary_path),
+            "manual_promotion_proxy_file": str(promotion_path),
+            "bootstrap_country": "VN",
+            "promotion_country": "VN",
+            "provider_country": "VN",
+        }
+
+        with patch.object(Path, "is_file", return_value=True):
+            env, _ = ideal_ui.build_environment(
+                payload,
+                "pix",
+                ideal_ui.PAYMENT_METHODS["pix"],
+            )
+
+        self.assertEqual(env["PIX_CHECKOUT_PROXY_FILE"], str(primary_path.resolve()))
+        self.assertEqual(env["PIX_PROVIDER_PROXY_FILE"], str(primary_path.resolve()))
+        self.assertEqual(env["PIX_PROMOTION_PROXY_FILE"], str(promotion_path.resolve()))
+        self.assertEqual(env["PIX_BOOTSTRAP_COUNTRY"], "BR")
+        self.assertEqual(env["PIX_PROMOTION_COUNTRY"], "BR")
+        self.assertEqual(env["PIX_PROVIDER_COUNTRY"], "BR")
 
 
 if __name__ == "__main__":

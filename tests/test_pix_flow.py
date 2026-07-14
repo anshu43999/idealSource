@@ -96,7 +96,7 @@ def test_pix_payment_method_includes_cpf(monkeypatch):
     assert pix.is_valid_cpf(stripe.last_body["billing_details[tax_id]"])
 
 
-def test_pix_update_runs_before_first_stripe_init(monkeypatch):
+def test_pix_seven_step_order_initializes_before_promotion(monkeypatch):
     events = []
     chatgpt = FakeChatgptSession()
     update_sessions = []
@@ -147,11 +147,12 @@ def test_pix_update_runs_before_first_stripe_init(monkeypatch):
 
     def fake_init(*args, **kwargs):
         events.append("init")
+        due = 2000 if events.count("init") == 1 else 0
         return {
             "mode": "subscription",
             "payment_method_types": ["card", "pix"],
             "automatic_payment_methods": True,
-            "total_summary": {"due": 0},
+            "total_summary": {"due": due},
             "currency": "brl",
             "config_id": "config_test_pix",
             "init_checksum": "checksum_test_pix",
@@ -192,7 +193,7 @@ def test_pix_update_runs_before_first_stripe_init(monkeypatch):
 
     assert redirect_url == "https://payments.example/pix"
     assert qr_urls == []
-    assert events == ["update", "chatgpt-tax", "stripe-tax", "init", "pm", "confirm"]
+    assert events == ["init", "update", "chatgpt-tax", "stripe-tax", "init", "pm", "confirm"]
     assert update_sessions == [chatgpt, chatgpt]
     assert update_countries == ["BR"]
 
@@ -203,19 +204,39 @@ def test_pix_br_processor_entity_defaults_to_openai_llc(monkeypatch):
     assert pix.processor_entity_for_country("BR") == "openai_llc"
 
 
-def test_pix_country_chain_is_always_br(monkeypatch):
+def test_pix_country_chain_uses_two_br_pools(monkeypatch):
     monkeypatch.delenv("PIX_PROMOTION_PROXY_FILE", raising=False)
 
     assert pix.PIX_BOOTSTRAP_COUNTRY == "BR"
     assert pix.PIX_PROMOTION_COUNTRIES == ["BR"]
     assert pix.PIX_PROVIDER_COUNTRY == "BR"
-    assert pix.promotion_proxy_file().name == "br_proxy_seeds.txt"
+    assert pix.promotion_proxy_file().name == "vn_proxy_seeds.txt"
 
 
-def test_pix_manual_chain_reuses_one_br_proxy():
-    proxy = "http://br-sticky-proxy"
+def test_pix_manual_chain_uses_independent_br_proxies(monkeypatch):
+    monkeypatch.setattr(pix, "log", lambda *args, **kwargs: None)
+    checkout_proxy = "http://main-br-proxy"
+    promotion_proxy = "http://promotion-br-proxy"
 
-    assert pix.pix_manual_proxy_chain(proxy) == (proxy, proxy, proxy)
+    assert pix.pix_manual_proxy_chain(checkout_proxy, promotion_proxy) == (
+        checkout_proxy,
+        promotion_proxy,
+        checkout_proxy,
+    )
+
+
+def test_pix_manual_chain_rejects_explicit_vn_proxy(monkeypatch):
+    monkeypatch.setattr(pix, "proxy_label", lambda proxy: proxy)
+
+    try:
+        pix.pix_manual_proxy_chain(
+            "http://user:password-BR-session@example.com:1000",
+            "http://user:password-VN-session@example.com:1000",
+        )
+    except RuntimeError as exc:
+        assert "必须是 BR" in str(exc)
+    else:
+        raise AssertionError("explicit VN proxy must be rejected")
 
 
 def test_pix_poll_retries_transient_network_error(monkeypatch):

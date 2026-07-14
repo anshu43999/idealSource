@@ -39,7 +39,8 @@ PIX_DIR = ROOT / "pix"
 PIX_SCRIPT_PATH = PIX_DIR / "pix_extract.py"
 PIX_PROXY_SEED_PATH = PIX_DIR / "proxy_seeds.txt"
 PIX_PRIMARY_PROXY_SEED_PATH = PIX_DIR / "br_proxy_seeds.txt"
-PIX_PROMOTION_PROXY_SEED_PATH = PIX_PRIMARY_PROXY_SEED_PATH
+# Keep the existing bind-mounted filename as the second BR pool for compatibility.
+PIX_PROMOTION_PROXY_SEED_PATH = PIX_DIR / "vn_proxy_seeds.txt"
 PIX_TOKEN_PATH = PIX_DIR / "token.txt"
 TWINT_DIR = ROOT / "twint"
 TWINT_SCRIPT_PATH = TWINT_DIR / "twint_extract.py"
@@ -290,6 +291,8 @@ def prepare_persistent_files(payload: dict[str, Any], payment_method: str) -> tu
     if payment_method in MANUAL_PROXY_METHODS:
         primary_path, promotion_path = manual_proxy_paths(payment_method) or (KAKAO_KR_PROXY_SEED_PATH, KAKAO_VN_PROXY_SEED_PATH)
         shared_proxy_path = primary_path == promotion_path
+        method_label = str(PAYMENT_METHODS.get(payment_method, {}).get("label") or payment_method)
+        chain = PAYMENT_CHAIN_DEFAULTS.get(payment_method, ("", "", ""))
         kr_text = clean_text(
             payload,
             "manual_primary_proxies",
@@ -314,7 +317,7 @@ def prepare_persistent_files(payload: dict[str, Any], payment_method: str) -> tu
         else:
             kr_count = count_proxy_lines(str(primary_path))
             if not kr_count:
-                raise ValueError("请填写 Kakao KR 代理")
+                raise ValueError(f"请填写 {method_label} {chain[0]} 主链路代理")
         if shared_proxy_path:
             vn_count = 0
         elif vn_count:
@@ -322,7 +325,8 @@ def prepare_persistent_files(payload: dict[str, Any], payment_method: str) -> tu
         else:
             vn_count = count_proxy_lines(str(promotion_path))
             if not vn_count:
-                raise ValueError("请填写 Kakao VN 代理")
+                stage = "优惠/税务" if payment_method == "pix" else "checkout/update"
+                raise ValueError(f"请填写 {method_label} {chain[1]} {stage}代理")
 
         token_text = clean_text(payload, "token", "", 30000)
         if token_text:
@@ -401,9 +405,7 @@ def build_environment(
             provider_country = "BR"
         else:
             bootstrap_country = clean_country_code(payload, "bootstrap_country", default_chain[0])
-            promotion_country = clean_country_code(
-                payload, "promotion_country", default_chain[1]
-            )
+            promotion_country = clean_country_code(payload, "promotion_country", default_chain[1])
             provider_country = clean_country_code(payload, "provider_country", default_chain[2])
         checkout_country = bootstrap_country
         payment_method_country = provider_country
@@ -447,6 +449,21 @@ def build_environment(
             clean_text(payload, "manual_promotion_proxy_file", clean_text(payload, "kakao_promotion_proxy_file", str(promotion_path))),
             "Kakao VN 代理文件",
         )
+    if payment_method in MANUAL_PROXY_METHODS and not manual_checkout_proxy_file:
+        primary_path, promotion_path = manual_proxy_paths(payment_method) or (KAKAO_KR_PROXY_SEED_PATH, KAKAO_VN_PROXY_SEED_PATH)
+        manual_checkout_proxy_file = resolve_proxy_file(
+            clean_text(payload, "manual_checkout_proxy_file", clean_text(payload, "kakao_checkout_proxy_file", str(primary_path))),
+            f"{method['label']} {bootstrap_country} proxy file",
+        )
+        manual_provider_proxy_file = resolve_proxy_file(
+            clean_text(payload, "manual_provider_proxy_file", clean_text(payload, "kakao_provider_proxy_file", manual_checkout_proxy_file)),
+            f"{method['label']} provider proxy file",
+        )
+        manual_promotion_proxy_file = resolve_proxy_file(
+            clean_text(payload, "manual_promotion_proxy_file", clean_text(payload, "kakao_promotion_proxy_file", str(promotion_path))),
+            f"{method['label']} {promotion_country} proxy file",
+        )
+
     promo_id = clean_text(payload, "promo_id", "plus-1-month-free", 200)
     proxy_default_scheme = clean_text(payload, "proxy_default_scheme", "http", 20).lower()
     if proxy_default_scheme not in {"http", "socks5h"}:

@@ -864,7 +864,7 @@
   <div class="toast" id="toast" role="status"></div>
 
   <script>
-    const CONFIG_VERSION = '2026-07-14-pix-vn-restored';
+    const CONFIG_VERSION = '2026-07-14-pix-br-seven-step';
     const form = document.getElementById('configForm');
     const startButton = document.getElementById('startButton');
     const stopButton = document.getElementById('stopButton');
@@ -902,7 +902,7 @@
     const providerCountryInput = document.getElementById('providerCountry');
     const COUNTRY_CHAIN_DEFAULTS = {
       ideal: { bootstrap: 'NL', promotion: 'VN', provider: 'NL' },
-      pix: { bootstrap: 'BR', promotion: 'VN', provider: 'BR' },
+      pix: { bootstrap: 'BR', promotion: 'BR', provider: 'BR' },
       kakao_pay: { bootstrap: 'KR', promotion: 'VN', provider: 'KR' },
       twint: { bootstrap: 'CH', promotion: 'VN', provider: 'CH' },
       upi: { bootstrap: 'IN', promotion: 'VN', provider: 'IN' },
@@ -980,6 +980,7 @@
     function countryChainForMethod(methodId = paymentMethodInput.value) {
       const defaults = COUNTRY_CHAIN_DEFAULTS[methodId];
       if (!defaults) return null;
+      if (methodId === 'pix') return { ...defaults };
       const saved = paymentCountryChains[methodId] || {};
       const source = methodId === paymentMethodInput.value
         ? {
@@ -1005,6 +1006,13 @@
     function loadCountryChain(methodId = paymentMethodInput.value) {
       const defaults = COUNTRY_CHAIN_DEFAULTS[methodId];
       if (!defaults) return;
+      if (methodId === 'pix') {
+        paymentCountryChains[methodId] = { ...defaults };
+        bootstrapCountryInput.value = defaults.bootstrap;
+        promotionCountryInput.value = defaults.promotion;
+        providerCountryInput.value = defaults.provider;
+        return;
+      }
       const saved = paymentCountryChains[methodId] || {};
       const chain = {
         bootstrap: normalizeCountryCode(saved.bootstrap, defaults.bootstrap),
@@ -1087,19 +1095,22 @@
       kakaoVnProxyField.hidden = !isManualProxyMethod;
       countryChainField.hidden = !isConfigurableChain;
       for (const input of [bootstrapCountryInput, promotionCountryInput, providerCountryInput]) {
-        input.disabled = !isConfigurableChain;
+        input.disabled = !isConfigurableChain || isPix;
+      }
+      if (isPix) {
+        bootstrapCountryInput.value = chain.bootstrap;
+        promotionCountryInput.value = chain.promotion;
+        providerCountryInput.value = chain.provider;
       }
       providerCountryInput.readOnly = isManualProxyMethod;
       if (isManualProxyMethod) providerCountryInput.value = bootstrapCountryInput.value.trim().toUpperCase() || providerCountryInput.value;
-      promotionCountryInput.maxLength = isPix ? 80 : 2;
-      promotionCountryInput.pattern = isPix
-        ? '[A-Za-z]{2}(\\s*,\\s*[A-Za-z]{2})*'
-        : '[A-Za-z]{2}';
-      promotionCountryInput.placeholder = isPix ? 'VN,US' : '';
+      promotionCountryInput.maxLength = 2;
+      promotionCountryInput.pattern = '[A-Za-z]{2}';
+      promotionCountryInput.placeholder = '';
       if (isConfigurableChain) {
         document.getElementById('countryChainHint').textContent =
           isPix
-            ? 'PIX：第一段用于 Checkout 与首次 Stripe init；第二段可按逗号填写多个地区，每次 update 后均用第三段刷新 Stripe，金额为 0 即进入后续阶段；第三段用于 Stripe refresh、税务、PM、confirm 与 approve。'
+            ? 'PIX 固定七步 BR 链路：主 BR 创建 checkout 并首次 init 校验 PIX；第二组 BR 应用优惠和同步税务；返回主 BR 校验 0 元后创建 PIX，最后 confirm、approve、poll。'
             : `${paymentLabel}：第一段用于 Checkout 与首次 Stripe init，第二段用于 checkout/update，第三段用于 Stripe refresh、税务、PM、confirm 与 approve。`;
       }
       document.getElementById('batchSizeLabel').textContent = isKakao
@@ -1156,6 +1167,15 @@
         document.getElementById('seedCountLabel').textContent = isPix ? `${chain.bootstrap}代理` : `${chain.bootstrap}/${chain.promotion}代理`;
         document.querySelector('label[for="kakaoKrProxies"]').textContent = `${chain.bootstrap} 代理`;
         document.querySelector('label[for="kakaoVnProxies"]').textContent = `${chain.promotion} 代理`;
+        if (isPix) {
+          document.getElementById('seedCountLabel').textContent = 'BR + BR代理';
+          document.querySelector('label[for="kakaoKrProxies"]').textContent = 'BR 主链路代理';
+          document.querySelector('label[for="kakaoVnProxies"]').textContent = 'BR 优惠/税务代理';
+          document.getElementById('kakaoKrProxyHint').textContent =
+            '用于 BR checkout、首次/二次 Stripe init、PIX、confirm、approve 与 poll。';
+          document.getElementById('kakaoVnProxyHint').textContent =
+            '仅用于 BR 应用优惠和同步 BR 税务；程序不会改写 country/region。';
+        }
       } else {
         document.getElementById('seedCountLabel').textContent = 'Seed代理';
       }
