@@ -16,7 +16,7 @@
 
 常用环境变量：
   PIX_CONFIRM_INLINE_PM=0   # 默认按 gpthel 流程：先创建 PM，再 confirm 引用 PM
-  PIX_UPDATE_TAX_REGION=1   # BR PIX 流程固定同步 ChatGPT/Stripe 税务地区
+  PIX_UPDATE_TAX_REGION=0   # 图片验证顺序不在首次 init 前写 Stripe tax_region
   PIX_BOOTSTRAP_COUNTRY=BR  # Checkout / 首次 Stripe init 地区
   PIX_PROMOTION_COUNTRY=VN,US  # checkout/update 地区，按顺序尝试
   PIX_PROVIDER_COUNTRY=BR   # Stripe refresh / 税务 / PM / approve 地区
@@ -1350,21 +1350,7 @@ def create_checkout(chatgpt: requests.Session, country: str) -> dict[str, str]:
         "billing_details": {"country": country, "currency": currency_for_country(country)},
         "checkout_ui_mode": "custom",
     }
-    if promo_mode in ("trial", "free_trial"):
-        trial_days = env_int("PP_TRIAL_DAYS", 30)
-        body["subscription_data"] = {"trial_period_days": trial_days}
-    elif promo_mode in ("campaign", "query"):
-        body["promo_campaign"] = {
-            "promo_campaign_id": promo_id,
-            "is_coupon_from_query_param": promo_mode == "query",
-        }
-    elif promo_mode == "coupon":
-        body["coupon"] = promo_id
-    elif promo_mode == "code":
-        body["promotion_code"] = promo_id
-    elif promo_mode != "off":
-        log(f"未知 PP_PROMO_MODE={promo_mode!r}，已忽略", "[WARN] ")
-    log(f"Checkout promo: mode={promo_mode}, id={promo_id}")
+    log(f"Checkout promo deferred to checkout/update: mode={promo_mode}, id={promo_id}")
 
     headers = {
         "Referer": "https://chatgpt.com/",
@@ -1384,36 +1370,6 @@ def create_checkout(chatgpt: requests.Session, country: str) -> dict[str, str]:
         raise RuntimeError(f"checkout 创建失败 HTTP {resp.status_code}: {resp.text[:500]}")
 
     data = resp.json() or {}
-    if (
-        promo_mode == "coupon"
-        and promo_id == "plus-1-month-free"
-        and not checkout_response_has_promo(data)
-        and env_bool("PIX_COUPON_FALLBACK_PROMO_CAMPAIGN", True)
-    ):
-        log("coupon 响应未显示优惠，按 promo_campaign 字符串重试", "[PROMO] ")
-        fallback_body = dict(body)
-        fallback_body.pop("coupon", None)
-        fallback_body["promo_campaign"] = promo_id
-        resp = chatgpt.post(
-            "https://chatgpt.com/backend-api/payments/checkout",
-            json=fallback_body,
-            headers=headers,
-            timeout=CHATGPT_TIMEOUT,
-        )
-        dump_http(
-            resp,
-            "checkout_promo_campaign",
-            fallback_body,
-            "POST",
-            "https://chatgpt.com/backend-api/payments/checkout",
-            force=True,
-        )
-        if resp.status_code >= 400:
-            if is_user_already_paid_error(resp.text):
-                raise RuntimeError("用户已支付: User is already paid")
-            raise RuntimeError(f"checkout promo_campaign 重试失败 HTTP {resp.status_code}: {resp.text[:500]}")
-        data = resp.json() or {}
-        log(f"promo_campaign 重试后 promo={checkout_response_has_promo(data)}", "[PROMO] ")
 
     cs_id = data.get("checkout_session_id") or data.get("session_id") or data.get("id")
     if not cs_id or not str(cs_id).startswith("cs_"):
@@ -2636,12 +2592,6 @@ def run_provider_flow(
                 raise
             raise RuntimeError(f"promotion 阶段失败: {exc}") from exc
         record_proxy_result("promotion", current_promotion_proxy, True, "promotion_update_success")
-
-        if env_bool("PIX_UPDATE_TAX_REGION", False):
-            log(f"首次 Stripe init 前同步 {PIX_PROVIDER_COUNTRY} checkout/taxes 与 Stripe tax_region...")
-            tax_chatgpt = build_chatgpt_session(access_token, device_id, provider_proxy, session_token)
-            update_pix_checkout_taxes(tax_chatgpt, checkout, billing)
-            stripe_update_tax_region(stripe, checkout["cs_id"], stripe_pk, billing)
 
         log(
             f"{stage_label} 后通过 {PIX_PROVIDER_COUNTRY} 刷新 Stripe: "

@@ -721,7 +721,7 @@ def build_environment(
                 "PIX_APPROVE_PARALLEL": "1",
                 "PIX_APPROVE_STICKY": "1",
                 "PIX_CONFIRM_INLINE_PM": "0",
-                "PIX_UPDATE_TAX_REGION": "1",
+                "PIX_UPDATE_TAX_REGION": "0",
                 "PIX_CHECKOUT_SNAPSHOT": "0",
                 "PIX_APPROVE_WARMUP": "1",
                 "PIX_SAVED_PAYMENT_VALUE": "never",
