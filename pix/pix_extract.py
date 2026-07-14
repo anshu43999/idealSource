@@ -243,6 +243,40 @@ def build_email(first_name: str, last_name: str) -> str:
     return f"{local}@{domain}"
 
 
+def is_valid_cpf(value: str) -> bool:
+    digits = re.sub(r"\D+", "", str(value or ""))
+    if len(digits) != 11 or len(set(digits)) == 1:
+        return False
+
+    def check_digit(base: list[int], start_weight: int) -> int:
+        total = sum(digit * (start_weight - index) for index, digit in enumerate(base))
+        remainder = total % 11
+        return 0 if remainder < 2 else 11 - remainder
+
+    numbers = [int(digit) for digit in digits]
+    return numbers[9] == check_digit(numbers[:9], 10) and numbers[10] == check_digit(numbers[:10], 11)
+
+
+def normalize_cpf(value: str) -> str:
+    digits = re.sub(r"\D+", "", str(value or ""))
+    if not is_valid_cpf(digits):
+        raise RuntimeError("PIX_TAX_ID must be a valid CPF")
+    return digits
+
+
+def generate_random_cpf() -> str:
+    while True:
+        base = [random.randint(0, 9) for _ in range(9)]
+        if len(set(base)) > 1:
+            break
+    first_total = sum(digit * (10 - index) for index, digit in enumerate(base))
+    first = 0 if first_total % 11 < 2 else 11 - first_total % 11
+    second_base = base + [first]
+    second_total = sum(digit * (11 - index) for index, digit in enumerate(second_base))
+    second = 0 if second_total % 11 < 2 else 11 - second_total % 11
+    return "".join(str(digit) for digit in second_base + [second])
+
+
 def normalize_country(country: str) -> str:
     value = str(country or "").strip().upper()
     return value if value in COUNTRY_CURRENCY else "BR"
@@ -1635,6 +1669,8 @@ def pix_billing_profile() -> dict[str, str]:
         if value:
             profile[key] = value
     profile["country"] = normalize_country(profile.get("country", "BR"))
+    configured_cpf = os.environ.get("PIX_TAX_ID", "").strip()
+    profile["tax_id"] = normalize_cpf(configured_cpf) if configured_cpf else generate_random_cpf()
     return profile
 
 
@@ -1691,25 +1727,12 @@ def stripe_update_tax_region(
     stripe: requests.Session,
     cs_id: str,
     stripe_pk: str,
-    ctx: dict[str, Any],
     billing: dict[str, str],
 ) -> bool:
     body: dict[str, Any] = {
         "key": stripe_pk,
         "_stripe_version": STRIPE_VERSION_FULL,
-        "elements_session_client[session_id]": ctx["elements_session_id"],
-        "elements_session_client[stripe_js_id]": ctx["stripe_js_id"],
-        "elements_session_client[referrer_host]": "chatgpt.com",
-        "elements_session_client[elements_init_source]": "custom_checkout",
-        "elements_session_client[is_aggregation_expected]": "false",
-        "elements_session_client[locale]": ctx["locale"],
-        "elements_session_client[client_betas][0]": "custom_checkout_server_updates_1",
-        "elements_session_client[client_betas][1]": "custom_checkout_manual_approval_1",
-        "elements_options_client[saved_payment_method][enable_save]": saved_payment_value(),
-        "elements_options_client[saved_payment_method][enable_redisplay]": saved_payment_value(),
-        "client_attribution_metadata[merchant_integration_additional_elements][0]": "expressCheckout",
-        "client_attribution_metadata[merchant_integration_additional_elements][1]": "payment",
-        "client_attribution_metadata[merchant_integration_additional_elements][2]": "address",
+        "eid": "NA",
         "tax_region[country]": billing["country"],
         "tax_region[postal_code]": billing["postal_code"],
         "tax_region[line1]": billing["line1"],
@@ -1791,6 +1814,9 @@ def stripe_create_pix_pm(stripe: requests.Session, cs_id: str, stripe_pk: str, b
     }
     if billing.get("state"):
         body["billing_details[address][state]"] = billing["state"]
+    tax_id = normalize_cpf(billing.get("tax_id") or "")
+    if tax_id:
+        body["billing_details[tax_id]"] = tax_id
 
     resp = stripe.post("https://api.stripe.com/v1/payment_methods", data=body, timeout=DEFAULT_TIMEOUT)
     dump_http(resp, "pix_pm", body, "POST", "https://api.stripe.com/v1/payment_methods", force=resp.status_code >= 400)
@@ -1833,6 +1859,9 @@ def add_inline_pix_payment_method_data(body: dict[str, Any], cs_id: str, billing
     )
     if billing.get("state"):
         body["payment_method_data[billing_details][address][state]"] = billing["state"]
+    tax_id = normalize_cpf(billing.get("tax_id") or "")
+    if tax_id:
+        body["payment_method_data[billing_details][tax_id]"] = tax_id
 
 
 def processor_entity_for_country(country: str, processor_entity: str = "") -> str:
@@ -2587,23 +2616,12 @@ def run_provider_flow(
                 )
         return current_ctx, current_amount
 
-    log(
-        f"{PIX_BOOTSTRAP_COUNTRY} Bootstrap Stripe init "
-        f"(PM={billing['country']}, proxy={proxy_label(checkout_proxy)})..."
-    )
-    init_payload = stripe_init(checkout["cs_id"], stripe_pk, checkout_proxy)
-    if not checkout.get("processor_entity"):
-        processor_entity = infer_processor_entity(init_payload)
-        if processor_entity:
-            checkout["processor_entity"] = processor_entity
-            log(f"从 Stripe init 推断 processor_entity={processor_entity}")
-    inspect_init(init_payload, f"{PIX_BOOTSTRAP_COUNTRY} Bootstrap")
-    if stop_event and stop_event.is_set():
-        raise RuntimeError("任务已停止，跳过本轮")
-
     hosted_url = ""
     ctx: dict[str, Any] = {}
     amount = 0
+    stripe = new_session(provider_proxy)
+    stripe.headers.update({"User-Agent": random_user_agent(), "Accept-Language": payment_accept_language()})
+
     for promotion_index, promotion_country in enumerate(PIX_PROMOTION_COUNTRIES, start=1):
         current_promotion_proxy = promotion_proxy if manual_proxy_mode_enabled() else proxy_for_country(promotion_proxy, promotion_country)
         stage_label = f"{promotion_country} checkout/update {promotion_index}/{len(PIX_PROMOTION_COUNTRIES)}"
@@ -2619,14 +2637,25 @@ def run_provider_flow(
             raise RuntimeError(f"promotion 阶段失败: {exc}") from exc
         record_proxy_result("promotion", current_promotion_proxy, True, "promotion_update_success")
 
+        if env_bool("PIX_UPDATE_TAX_REGION", False):
+            log(f"首次 Stripe init 前同步 {PIX_PROVIDER_COUNTRY} checkout/taxes 与 Stripe tax_region...")
+            tax_chatgpt = build_chatgpt_session(access_token, device_id, provider_proxy, session_token)
+            update_pix_checkout_taxes(tax_chatgpt, checkout, billing)
+            stripe_update_tax_region(stripe, checkout["cs_id"], stripe_pk, billing)
+
         log(
             f"{stage_label} 后通过 {PIX_PROVIDER_COUNTRY} 刷新 Stripe: "
             f"proxy={proxy_label(provider_proxy)}"
         )
         init_payload = stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
+        if not checkout.get("processor_entity"):
+            processor_entity = infer_processor_entity(init_payload)
+            if processor_entity:
+                checkout["processor_entity"] = processor_entity
+                log(f"从 update 后首次 Stripe init 推断 processor_entity={processor_entity}")
         hosted_url = str(init_payload.get("stripe_hosted_url") or hosted_url or "")
         ctx, amount = inspect_init(
-            init_payload, f"{promotion_country} 更新后 {PIX_PROVIDER_COUNTRY}"
+            init_payload, f"{promotion_country} 更新后首次 {PIX_PROVIDER_COUNTRY} init"
         )
         record_checkout_zero_result(checkout_proxy, checkout_country, amount)
         if amount == 0:
@@ -2639,21 +2668,6 @@ def run_provider_flow(
             )
             continue
         raise RuntimeError(f"0 元优惠未生效，当前金额小单位={amount}，已停止生成非 0 元 PIX 链")
-
-    stripe = new_session(provider_proxy)
-    stripe.headers.update({"User-Agent": random_user_agent(), "Accept-Language": payment_accept_language()})
-
-    if env_bool("PIX_UPDATE_TAX_REGION", False):
-        log(f"同步 {PIX_PROVIDER_COUNTRY} checkout/taxes 与 Stripe tax_region...")
-        tax_chatgpt = build_chatgpt_session(access_token, device_id, provider_proxy, session_token)
-        update_pix_checkout_taxes(tax_chatgpt, checkout, billing)
-        stripe_update_tax_region(stripe, checkout["cs_id"], stripe_pk, ctx, billing)
-        init_payload = stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
-        hosted_url = str(init_payload.get("stripe_hosted_url") or hosted_url or "")
-        ctx, amount = inspect_init(init_payload, f"{PIX_PROVIDER_COUNTRY} 税务同步")
-        record_checkout_zero_result(checkout_proxy, checkout_country, amount)
-        if amount != 0:
-            raise RuntimeError(f"0 元优惠未生效，当前金额小单位={amount}，已停止生成非 0 元 PIX 链")
 
     pm_id = ""
     if env_bool("PIX_CONFIRM_INLINE_PM", False):
