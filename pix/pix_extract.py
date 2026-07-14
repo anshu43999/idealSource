@@ -16,9 +16,9 @@
 
 常用环境变量：
   PIX_CONFIRM_INLINE_PM=0   # 默认按 gpthel 流程：先创建 PM，再 confirm 引用 PM
-  PIX_UPDATE_TAX_REGION=0   # 图片验证顺序不在首次 init 前写 Stripe tax_region
+  PIX_UPDATE_TAX_REGION=1   # 首次 init 前强制把 ChatGPT/Stripe 税区同步为 BR
   PIX_BOOTSTRAP_COUNTRY=BR  # Checkout / 首次 Stripe init 地区
-  PIX_PROMOTION_COUNTRY=VN,US  # checkout/update 地区，按顺序尝试
+  PIX_PROMOTION_COUNTRY=VN  # 唯一一次 checkout/update + BR taxes 地区
   PIX_PROVIDER_COUNTRY=BR   # Stripe refresh / 税务 / PM / approve 地区
   PIX_MAX_RETRY=5
   PIX_PROVIDER_PER_CHECKOUT=1
@@ -1340,6 +1340,31 @@ def checkout_response_has_trial(payload: Any) -> bool:
     return False
 
 
+def checkout_processor_entity(payload: Any) -> str:
+    if isinstance(payload, dict):
+        direct = payload.get("processor_entity") or payload.get("processorEntity")
+        if direct:
+            return str(direct).strip()
+        for value in payload.values():
+            entity = checkout_processor_entity(value)
+            if entity:
+                return entity
+    elif isinstance(payload, list):
+        for value in payload:
+            entity = checkout_processor_entity(value)
+            if entity:
+                return entity
+    elif isinstance(payload, str):
+        for pattern in (
+            r"/checkout/(openai_[A-Za-z0-9_]+)/cs_",
+            r"[?&]processor_entity=(openai_[A-Za-z0-9_]+)",
+        ):
+            match = re.search(pattern, payload)
+            if match:
+                return match.group(1)
+    return ""
+
+
 def create_checkout(chatgpt: requests.Session, country: str) -> dict[str, str]:
     country = normalize_country(country)
     promo_mode = os.environ.get("PP_PROMO_MODE", "campaign").strip().lower() or "campaign"
@@ -1385,10 +1410,10 @@ def create_checkout(chatgpt: requests.Session, country: str) -> dict[str, str]:
     )
     match = re.search(r"pk_live_[A-Za-z0-9]+", str(raw_pk))
     stripe_pk = match.group(0) if match else DEFAULT_STRIPE_PK
-    processor_entity = str(data.get("processor_entity") or data.get("processorEntity") or "")
+    processor_entity = checkout_processor_entity(data) or processor_entity_for_country(country)
     log(
         f"Checkout 创建成功: {cs_id} / {country} / {currency_for_country(country)} / "
-        f"mode={promo_mode} / promo={checkout_response_has_promo(data)} / "
+        f"entity={processor_entity} / mode={promo_mode} / promo={checkout_response_has_promo(data)} / "
         f"trial={checkout_response_has_trial(data)}"
     )
     return {
@@ -1497,6 +1522,26 @@ def update_pix_checkout_taxes(
             raise RuntimeError("checkout_not_active_session")
         raise RuntimeError(f"checkout/taxes 失败 HTTP {resp.status_code}: {resp.text[:500]}")
     log(f"{PIX_PROVIDER_COUNTRY} checkout/taxes 同步成功")
+
+
+def prepare_pix_checkout_before_init(
+    chatgpt: requests.Session,
+    checkout: dict[str, str],
+    billing: dict[str, str],
+    promotion_country: str,
+    promotion_proxy: str,
+    stripe_pk: str,
+) -> None:
+    set_proxy(chatgpt, promotion_proxy)
+    update_checkout_promotion(chatgpt, checkout, promotion_country)
+    update_pix_checkout_taxes(chatgpt, checkout, billing)
+
+    tax_stripe = new_session(promotion_proxy)
+    tax_stripe.headers.update(
+        {"User-Agent": random_user_agent(), "Accept-Language": payment_accept_language()}
+    )
+    if not stripe_update_tax_region(tax_stripe, checkout["cs_id"], stripe_pk, billing):
+        raise RuntimeError("首次 Stripe init 前同步 BR tax_region 失败")
 
 
 def stripe_init(cs_id: str, stripe_pk: str, proxy: str) -> dict[str, Any]:
@@ -1821,9 +1866,13 @@ def add_inline_pix_payment_method_data(body: dict[str, Any], cs_id: str, billing
 
 
 def processor_entity_for_country(country: str, processor_entity: str = "") -> str:
-    if processor_entity:
-        return processor_entity
-    return "openai_llc" if normalize_country(country) == "US" else "openai_ie"
+    entity = str(processor_entity or "").strip()
+    if entity:
+        return entity
+    configured = os.environ.get("PIX_PROCESSOR_ENTITY", "").strip()
+    if configured:
+        return configured
+    return "openai_llc" if normalize_country(country) in {"BR", "US"} else "openai_ie"
 
 
 def stripe_checkout_long_url(cs_id: str, country: str, processor_entity: str) -> str:
@@ -2552,6 +2601,7 @@ def run_provider_flow(
     checkout: dict[str, str],
     billing: dict[str, str],
     stop_event: Event | None = None,
+    chatgpt_session: requests.Session | None = None,
 ) -> tuple[str, list[str]]:
     checkout_country = normalize_country(os.environ.get("PIX_CHECKOUT_COUNTRY", PIX_BOOTSTRAP_COUNTRY))
     stripe_pk = checkout.get("stripe_pk") or DEFAULT_STRIPE_PK
@@ -2562,14 +2612,20 @@ def run_provider_flow(
         amount_major = current_amount / 100
         log(f"{stage} Stripe init 成功, 金额={checkout['currency']} {amount_major:.2f}")
         payment_method_types = first_value_by_key(payload, "payment_method_types")
-        if isinstance(payment_method_types, list):
-            methods = [str(item).lower() for item in payment_method_types]
-            log(f"Stripe 可用支付方式: {methods}")
-            if "pix" not in methods:
-                raise RuntimeError(
-                    f"{PIX_UNAVAILABLE_ERROR}: {stage} amount={current_amount}; "
-                    f"payment_method_types={methods}"
-                )
+        methods = (
+            [str(item).lower() for item in payment_method_types]
+            if isinstance(payment_method_types, list)
+            else []
+        )
+        mode = str(payload.get("mode") or first_value_by_key(payload, "mode") or "").lower()
+        automatic = first_value_by_key(payload, "automatic_payment_methods")
+        log(f"Stripe init: mode={mode or 'unknown'} methods={methods} automatic={automatic!r}")
+        if "pix" not in methods:
+            raise RuntimeError(
+                f"{PIX_UNAVAILABLE_ERROR}: {stage} amount={current_amount}; "
+                f"mode={mode or 'unknown'}; payment_method_types={methods}; "
+                f"automatic_payment_methods={automatic!r}"
+            )
         return current_ctx, current_amount
 
     hosted_url = ""
@@ -2578,46 +2634,47 @@ def run_provider_flow(
     stripe = new_session(provider_proxy)
     stripe.headers.update({"User-Agent": random_user_agent(), "Accept-Language": payment_accept_language()})
 
-    for promotion_index, promotion_country in enumerate(PIX_PROMOTION_COUNTRIES, start=1):
-        current_promotion_proxy = promotion_proxy if manual_proxy_mode_enabled() else proxy_for_country(promotion_proxy, promotion_country)
-        stage_label = f"{promotion_country} checkout/update {promotion_index}/{len(PIX_PROMOTION_COUNTRIES)}"
-        log(f"{stage_label}: proxy={proxy_label(current_promotion_proxy)}")
-        try:
-            promotion_chatgpt = build_chatgpt_session(
-                access_token, device_id, current_promotion_proxy, session_token
-            )
-            update_checkout_promotion(promotion_chatgpt, checkout, promotion_country)
-        except Exception as exc:
-            if is_checkout_not_active_error(exc):
-                raise
-            raise RuntimeError(f"promotion 阶段失败: {exc}") from exc
-        record_proxy_result("promotion", current_promotion_proxy, True, "promotion_update_success")
+    promotion_country = PIX_PROMOTION_COUNTRY
+    current_promotion_proxy = (
+        promotion_proxy
+        if manual_proxy_mode_enabled()
+        else proxy_for_country(promotion_proxy, promotion_country)
+    )
+    stage_label = f"{promotion_country} update + BR taxes"
+    log(f"{stage_label}: proxy={proxy_label(current_promotion_proxy)}")
+    promotion_chatgpt = chatgpt_session or build_chatgpt_session(
+        access_token, device_id, checkout_proxy, session_token
+    )
+    try:
+        prepare_pix_checkout_before_init(
+            promotion_chatgpt,
+            checkout,
+            billing,
+            promotion_country,
+            current_promotion_proxy,
+            stripe_pk,
+        )
+    except Exception as exc:
+        if is_checkout_not_active_error(exc):
+            raise
+        raise RuntimeError(f"首次 Stripe init 前 PIX 状态同步失败: {exc}") from exc
+    record_proxy_result("promotion", current_promotion_proxy, True, "pix_state_sync_success")
 
-        log(
-            f"{stage_label} 后通过 {PIX_PROVIDER_COUNTRY} 刷新 Stripe: "
-            f"proxy={proxy_label(provider_proxy)}"
+    log(
+        f"{stage_label} 后执行唯一一次 {PIX_PROVIDER_COUNTRY} Stripe init: "
+        f"proxy={proxy_label(provider_proxy)} entity={checkout['processor_entity']}"
+    )
+    init_payload = stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
+    hosted_url = str(init_payload.get("stripe_hosted_url") or "")
+    ctx, amount = inspect_init(
+        init_payload, f"{promotion_country} update/taxes 后首次 {PIX_PROVIDER_COUNTRY} init"
+    )
+    record_checkout_zero_result(checkout_proxy, checkout_country, amount)
+    if amount != 0:
+        raise RuntimeError(
+            f"0 元优惠未生效，当前金额小单位={amount}，已停止生成非 0 元 PIX 链"
         )
-        init_payload = stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
-        if not checkout.get("processor_entity"):
-            processor_entity = infer_processor_entity(init_payload)
-            if processor_entity:
-                checkout["processor_entity"] = processor_entity
-                log(f"从 update 后首次 Stripe init 推断 processor_entity={processor_entity}")
-        hosted_url = str(init_payload.get("stripe_hosted_url") or hosted_url or "")
-        ctx, amount = inspect_init(
-            init_payload, f"{promotion_country} 更新后首次 {PIX_PROVIDER_COUNTRY} init"
-        )
-        record_checkout_zero_result(checkout_proxy, checkout_country, amount)
-        if amount == 0:
-            log("Promotion 后金额为 0，继续按 0 元 PIX 流程提取最终支付 URL")
-            break
-        if promotion_index < len(PIX_PROMOTION_COUNTRIES):
-            log(
-                f"{promotion_country} 更新后金额仍非 0，继续下一段 checkout/update",
-                "[WARN] ",
-            )
-            continue
-        raise RuntimeError(f"0 元优惠未生效，当前金额小单位={amount}，已停止生成非 0 元 PIX 链")
+    log("首次 Init 同时满足 amount=0 且包含 PIX，继续 PM → confirm → approve → poll")
 
     pm_id = ""
     if env_bool("PIX_CONFIRM_INLINE_PM", False):
@@ -2764,6 +2821,7 @@ def run_once(
         checkout,
         billing,
         stop_event,
+        chatgpt_session=chatgpt,
     )
 
 

@@ -37,7 +37,9 @@ class FakeChatgptSession:
             json=lambda: {
                 "checkout_session_id": "cs_test_checkout",
                 "publishable_key": "pk_test_pix",
-                "processor_entity": "openai_llc",
+                "checkout_url": (
+                    "https://chatgpt.com/checkout/openai_llc/cs_test_checkout"
+                ),
             },
         )
 
@@ -47,14 +49,13 @@ def test_pix_checkout_defers_promotion_to_update(monkeypatch):
     monkeypatch.setenv("PP_PROMO_ID", "plus-1-month-free")
     chatgpt = FakeChatgptSession()
 
-    pix.create_checkout(chatgpt, "BR")
+    checkout = pix.create_checkout(chatgpt, "BR")
 
+    assert checkout["processor_entity"] == "openai_llc"
     assert "promo_campaign" not in chatgpt.last_body
     assert "coupon" not in chatgpt.last_body
     assert "promotion_code" not in chatgpt.last_body
     assert "subscription_data" not in chatgpt.last_body
-
-
 
 def test_pix_billing_profile_generates_valid_cpf(monkeypatch):
     monkeypatch.delenv("PIX_TAX_ID", raising=False)
@@ -78,6 +79,8 @@ def test_pix_payment_method_includes_cpf(monkeypatch):
 
 def test_pix_update_runs_before_first_stripe_init(monkeypatch):
     events = []
+    chatgpt = FakeChatgptSession()
+    update_sessions = []
     billing = pix.pix_billing_profile()
     stripe = FakeStripeSession()
     checkout = {
@@ -88,7 +91,7 @@ def test_pix_update_runs_before_first_stripe_init(monkeypatch):
         "currency": "BRL",
     }
 
-    monkeypatch.setenv("PIX_UPDATE_TAX_REGION", "0")
+    monkeypatch.setenv("PIX_UPDATE_TAX_REGION", "1")
     for name in ("PIX_UPDATE_CUSTOMER_DATA", "PIX_CHECKOUT_SNAPSHOT", "PIX_CONFIRM_INLINE_PM"):
         monkeypatch.setenv(name, "0")
     monkeypatch.setattr(pix, "log", lambda *args, **kwargs: None)
@@ -100,14 +103,20 @@ def test_pix_update_runs_before_first_stripe_init(monkeypatch):
     monkeypatch.setattr(
         pix,
         "update_checkout_promotion",
-        lambda *args, **kwargs: events.append("update"),
+        lambda session, *args, **kwargs: (
+            update_sessions.append(session),
+            events.append("update"),
+        ),
     )
     monkeypatch.setattr(pix, "record_proxy_result", lambda *args, **kwargs: None)
     monkeypatch.setattr(pix, "record_checkout_zero_result", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         pix,
         "update_pix_checkout_taxes",
-        lambda *args, **kwargs: events.append("chatgpt-tax"),
+        lambda session, *args, **kwargs: (
+            update_sessions.append(session),
+            events.append("chatgpt-tax"),
+        ),
     )
     monkeypatch.setattr(
         pix,
@@ -118,7 +127,9 @@ def test_pix_update_runs_before_first_stripe_init(monkeypatch):
     def fake_init(*args, **kwargs):
         events.append("init")
         return {
+            "mode": "subscription",
             "payment_method_types": ["card", "pix"],
+            "automatic_payment_methods": True,
             "total_summary": {"due": 0},
             "currency": "brl",
             "config_id": "config_test_pix",
@@ -155,8 +166,16 @@ def test_pix_update_runs_before_first_stripe_init(monkeypatch):
         "device-test",
         checkout,
         billing,
+        chatgpt_session=chatgpt,
     )
 
     assert redirect_url == "https://payments.example/pix"
     assert qr_urls == []
-    assert events == ["update", "init", "pm", "confirm"]
+    assert events == ["update", "chatgpt-tax", "stripe-tax", "init", "pm", "confirm"]
+    assert update_sessions == [chatgpt, chatgpt]
+
+
+def test_pix_br_processor_entity_defaults_to_openai_llc(monkeypatch):
+    monkeypatch.delenv("PIX_PROCESSOR_ENTITY", raising=False)
+
+    assert pix.processor_entity_for_country("BR") == "openai_llc"
