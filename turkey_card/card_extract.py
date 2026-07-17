@@ -103,7 +103,9 @@ def configure_flow() -> None:
     flow.LOG_DIR.mkdir(parents=True, exist_ok=True)
     flow.DUMP_DIR.mkdir(parents=True, exist_ok=True)
     flow._log_file = flow.LOG_DIR / f"turkey_card_{time.strftime('%Y%m%d-%H%M%S')}.log"
-    flow.COUNTRY_CURRENCY.update({"TR": "TRY", "GB": "GBP"})
+    # ChatGPT checkout accepts TR as a billing country, but TRY is not in its
+    # checkout currency enum. Keep the TR country/proxy chain and settle in USD.
+    flow.COUNTRY_CURRENCY.update({"TR": "USD", "GB": "GBP"})
     flow.IDEAL_BOOTSTRAP_COUNTRY = "TR"
     flow.IDEAL_PROMOTION_COUNTRY = "GB"
     flow.IDEAL_PROVIDER_COUNTRY = "TR"

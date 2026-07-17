@@ -33,7 +33,7 @@ def checkout() -> dict[str, str]:
     return {
         "cs_id": "cs_test_card",
         "stripe_pk": "pk_test_card",
-        "currency": "TRY",
+        "currency": "USD",
         "billing_country": "TR",
         "processor_entity": "openai_ie",
     }
@@ -83,7 +83,7 @@ def test_turkey_card_country_chain():
     assert card.flow.IDEAL_BOOTSTRAP_COUNTRY == "TR"
     assert card.flow.IDEAL_PROMOTION_COUNTRY == "GB"
     assert card.flow.IDEAL_PROVIDER_COUNTRY == "TR"
-    assert card.flow.COUNTRY_CURRENCY["TR"] == "TRY"
+    assert card.flow.COUNTRY_CURRENCY["TR"] == "USD"
 
 
 def test_turkey_checkout_defers_promotion(monkeypatch):
@@ -93,7 +93,8 @@ def test_turkey_checkout_defers_promotion(monkeypatch):
     created = card.flow.create_checkout(chatgpt, "TR")
 
     assert created["billing_country"] == "TR"
-    assert created["currency"] == "TRY"
+    assert created["currency"] == "USD"
+    assert chatgpt.body["billing_details"] == {"country": "TR", "currency": "USD"}
     assert "promo_campaign" not in chatgpt.body
     assert "coupon" not in chatgpt.body
 
