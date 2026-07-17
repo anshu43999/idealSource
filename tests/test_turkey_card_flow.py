@@ -46,8 +46,8 @@ def run_flow(monkeypatch, methods: list[str], events: list[str]) -> str:
         lambda *args, **kwargs: object(),
     )
     monkeypatch.setattr(
-        card.flow,
-        "update_checkout_promotion",
+        card,
+        "update_turkey_checkout_promotion",
         lambda *args, **kwargs: events.append("update"),
     )
     monkeypatch.setattr(
@@ -134,7 +134,7 @@ def test_manual_card_flow_rejects_missing_card(monkeypatch):
 
 def test_manual_card_flow_falls_back_to_checkout_page(monkeypatch):
     monkeypatch.setattr(card.flow, "build_chatgpt_session", lambda *args: object())
-    monkeypatch.setattr(card.flow, "update_checkout_promotion", lambda *args: None)
+    monkeypatch.setattr(card, "update_turkey_checkout_promotion", lambda *args: None)
     monkeypatch.setattr(card, "update_turkey_checkout_taxes", lambda *args: None)
     monkeypatch.setattr(
         card.flow,
@@ -177,3 +177,19 @@ def test_turkey_checkout_taxes_uses_tr_currency():
     assert session.body["billing_country"] == "TR"
     assert session.body["currency"] == "USD"
     assert session.body["billing_address"]["country"] == "TR"
+
+
+def test_turkey_checkout_update_uses_tr_billing_details():
+    session = FakeChatgptSession()
+
+    card.update_turkey_checkout_promotion(session, checkout())
+
+    assert session.body["checkout_session_id"] == "cs_test_card"
+    assert session.body["billing_details"] == {
+        "country": "TR",
+        "currency": "USD",
+    }
+    assert session.body["promo_campaign"] == {
+        "promo_campaign_id": "plus-1-month-free",
+        "is_coupon_from_query_param": False,
+    }

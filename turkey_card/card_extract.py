@@ -61,6 +61,66 @@ def turkey_billing_profile() -> dict[str, str]:
     return profile
 
 
+def update_turkey_checkout_promotion(
+    chatgpt: Any,
+    checkout: dict[str, str],
+) -> None:
+    mode = os.environ.get("PP_PROMO_MODE", "campaign").strip().lower() or "campaign"
+    promo_id = os.environ.get("PP_PROMO_ID", "plus-1-month-free").strip() or "plus-1-month-free"
+    body: dict[str, Any] = {
+        "checkout_session_id": checkout["cs_id"],
+        "processor_entity": flow.processor_entity_for_country(
+            flow.IDEAL_BOOTSTRAP_COUNTRY,
+            checkout.get("processor_entity") or "",
+        ),
+        "plan_name": "chatgptplusplan",
+        "price_interval": "month",
+        "seat_quantity": 1,
+        "billing_details": {
+            "country": "TR",
+            "currency": flow.currency_for_country("TR"),
+        },
+    }
+    if mode in {"campaign", "query", "coupon"}:
+        body["promo_campaign"] = {
+            "promo_campaign_id": promo_id,
+            "is_coupon_from_query_param": mode == "query",
+        }
+    url = "https://chatgpt.com/backend-api/payments/checkout/update"
+    resp = chatgpt.post(
+        url,
+        json=body,
+        headers={
+            "Referer": flow.checkout_page_url(checkout),
+            "x-openai-target-path": "/backend-api/payments/checkout/update",
+            "x-openai-target-route": "/backend-api/payments/checkout/update",
+        },
+        timeout=flow.CHATGPT_TIMEOUT,
+    )
+    flow.dump_http(
+        resp,
+        "turkey_checkout_update",
+        body,
+        "POST",
+        url,
+        force=resp.status_code >= 400,
+    )
+    if resp.status_code >= 400:
+        if flow.is_checkout_not_active_error(resp.text):
+            raise RuntimeError("checkout_not_active_session")
+        raise RuntimeError(f"TR checkout/update 失败 HTTP {resp.status_code}: {resp.text[:500]}")
+    try:
+        payload = resp.json() or {}
+    except Exception:
+        payload = {}
+    if isinstance(payload, dict) and payload.get("success") is False:
+        raise RuntimeError(f"TR checkout/update rejected: {str(payload)[:500]}")
+    flow.log(
+        f"TR checkout/update 成功: billing=TR/{flow.currency_for_country('TR')}, "
+        f"promo={promo_id if 'promo_campaign' in body else 'off'}"
+    )
+
+
 def update_turkey_checkout_taxes(
     chatgpt: Any,
     checkout: dict[str, str],
@@ -154,7 +214,7 @@ def run_manual_card_flow(
         chatgpt = flow.build_chatgpt_session(
             access_token, device_id, promotion_proxy, session_token
         )
-        flow.update_checkout_promotion(chatgpt, checkout)
+        update_turkey_checkout_promotion(chatgpt, checkout)
         update_turkey_checkout_taxes(chatgpt, checkout, tr_billing)
     except Exception as exc:
         if flow.is_checkout_not_active_error(exc):
