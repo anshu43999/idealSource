@@ -261,13 +261,11 @@ def run_manual_card_flow(
 
     def manual_card_url(payload: dict[str, Any]) -> str:
         hosted_url = str(payload.get("stripe_hosted_url") or "")
-        for value in (hosted_url, flow.checkout_page_url(checkout)):
-            match = flow.re.search(r"/c/pay/(cs_[^/?#]+)", value)
-            if match:
-                return f"https://pay.openai.com/c/pay/{match.group(1)}"
+        if hosted_url:
+            return hosted_url
         cs_id = str(checkout.get("cs_id") or "")
         if cs_id.startswith("cs_"):
-            return f"https://pay.openai.com/c/pay/{cs_id}"
+            return f"https://checkout.stripe.com/c/pay/{cs_id}"
         return flow.checkout_page_url(checkout)
 
     if stop_event and stop_event.is_set():
