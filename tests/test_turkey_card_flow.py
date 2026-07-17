@@ -62,10 +62,15 @@ def run_flow(monkeypatch, methods: list[str], events: list[str]) -> str:
     )
 
     def fake_init(*args, **kwargs):
-        events.append("init")
+        if len([event for event in events if event == "init"]) == 0:
+            events.append("init")
+            due = 2000
+        else:
+            events.append("init")
+            due = 0
         return {
             "payment_method_types": methods,
-            "total_summary": {"due": 0},
+            "total_summary": {"due": due},
             "stripe_hosted_url": (
                 "https://checkout.stripe.com/c/pay/cs_test_card?test=1"
             ),
@@ -225,3 +230,42 @@ def test_turkey_checkout_update_switches_returned_session():
     assert checkout_data["cs_id"] == "cs_test_tr_zero"
     assert checkout_data["stripe_pk"] == "pk_test_tr"
     assert checkout_data["processor_entity"] == "openai_ie"
+
+
+def test_manual_card_flow_preserves_existing_zero_without_update(monkeypatch):
+    events: list[str] = []
+    monkeypatch.setattr(card, "activate_turkey_checkout", lambda *args: events.append("activate"))
+    monkeypatch.setattr(card.flow, "build_chatgpt_session", lambda *args, **kwargs: object())
+    monkeypatch.setattr(card, "update_turkey_checkout_promotion", lambda *args: events.append("update"))
+    monkeypatch.setattr(card, "update_turkey_checkout_taxes", lambda *args: events.append("taxes"))
+    monkeypatch.setattr(card.flow, "build_ctx", lambda payload, checkout: {})
+    monkeypatch.setattr(card.flow, "record_proxy_result", lambda *args: None)
+    monkeypatch.setattr(card.flow, "record_checkout_zero_result", lambda *args: None)
+
+    def fake_init(*args, **kwargs):
+        events.append("init")
+        return {
+            "payment_method_types": ["card", "link"],
+            "total_summary": {"due": 0},
+            "stripe_hosted_url": (
+                "https://checkout.stripe.com/c/pay/cs_test_card?test=1"
+            ),
+        }
+
+    monkeypatch.setattr(card.flow, "stripe_init", fake_init)
+
+    result, qr_urls = card.run_manual_card_flow(
+        "access-token",
+        "session-token",
+        "gb-checkout-proxy",
+        "tr-promotion-proxy",
+        "tr-provider-proxy",
+        [],
+        "device-id",
+        checkout(),
+        {},
+    )
+
+    assert qr_urls == []
+    assert result == "https://pay.openai.com/c/pay/cs_test_card?test=1"
+    assert events == ["activate", "init", "init"]

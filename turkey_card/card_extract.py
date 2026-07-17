@@ -257,16 +257,37 @@ def run_manual_card_flow(
     """Create from GB, convert through TR update, then return the hosted form."""
     del approve_pool, billing
     tr_billing = turkey_billing_profile()
+    stripe_pk = checkout.get("stripe_pk") or flow.DEFAULT_STRIPE_PK
+
+    def manual_card_url(payload: dict[str, Any]) -> str:
+        hosted_url = str(payload.get("stripe_hosted_url") or "")
+        return flow.to_openai_pay_url(hosted_url) or flow.checkout_page_url(checkout)
+
     if stop_event and stop_event.is_set():
         raise RuntimeError("任务已停止，跳过本轮")
 
     flow.log(f"GB Bootstrap Stripe Init: proxy={flow.proxy_label(checkout_proxy)}")
     activate_turkey_checkout(checkout, checkout_proxy)
-    stripe_pk = checkout.get("stripe_pk") or flow.DEFAULT_STRIPE_PK
     bootstrap_payload = flow.stripe_init(checkout["cs_id"], stripe_pk, checkout_proxy)
-    _bootstrap_ctx, _bootstrap_amount = inspect_card_init(
+    _bootstrap_ctx, bootstrap_amount = inspect_card_init(
         checkout, bootstrap_payload, "GB Bootstrap"
     )
+    if bootstrap_amount == 0:
+        flow.log(
+            "GB Bootstrap 已经是 0 元；跳过会重算价格的 TR checkout/update，"
+            "改为直接用 TR Provider 刷新并输出手动 Card 页面"
+        )
+        tr_payload = flow.stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
+        _tr_ctx, tr_amount = inspect_card_init(checkout, tr_payload, "TR Provider 直接刷新")
+        flow.record_checkout_zero_result(provider_proxy, "TR", tr_amount)
+        if tr_amount == 0:
+            manual_url = manual_card_url(tr_payload)
+            flow.log(f"Card 渠道可用，返回手动填写卡片页面: {manual_url[:180]}")
+            return manual_url, []
+        flow.log(
+            f"TR Provider 直接刷新后金额变为 {tr_amount}，继续尝试 TR checkout/update 转换",
+            "[WARN] ",
+        )
 
     if stop_event and stop_event.is_set():
         raise RuntimeError("任务已停止，跳过本轮")
@@ -313,8 +334,7 @@ def run_manual_card_flow(
             f"0 元优惠未生效，当前金额小单位={amount}，已停止生成手动 Card 支付链接"
         )
 
-    hosted_url = str(init_payload.get("stripe_hosted_url") or "")
-    manual_url = flow.to_openai_pay_url(hosted_url) or flow.checkout_page_url(checkout)
+    manual_url = manual_card_url(init_payload)
     flow.log(f"Card 渠道可用，返回手动填写卡片页面: {manual_url[:180]}")
     return manual_url, []
 
