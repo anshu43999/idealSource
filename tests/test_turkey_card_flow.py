@@ -269,3 +269,46 @@ def test_manual_card_flow_preserves_existing_zero_without_update(monkeypatch):
     assert qr_urls == []
     assert result == "https://checkout.stripe.com/c/pay/cs_test_card?test=1"
     assert events == ["activate", "init", "init"]
+
+
+def test_manual_card_flow_returns_direct_refresh_url_before_update(monkeypatch):
+    events: list[str] = []
+    monkeypatch.setattr(card, "activate_turkey_checkout", lambda *args: events.append("activate"))
+    monkeypatch.setattr(card.flow, "build_chatgpt_session", lambda *args, **kwargs: object())
+    monkeypatch.setattr(card, "update_turkey_checkout_promotion", lambda *args: events.append("update"))
+    monkeypatch.setattr(card, "update_turkey_checkout_taxes", lambda *args: events.append("taxes"))
+    monkeypatch.setattr(card.flow, "build_ctx", lambda payload, checkout: {})
+    monkeypatch.setattr(card.flow, "record_proxy_result", lambda *args: None)
+    monkeypatch.setattr(card.flow, "record_checkout_zero_result", lambda *args: None)
+
+    def fake_init(*args, **kwargs):
+        events.append("init")
+        if len([event for event in events if event == "init"]) == 1:
+            due = 0
+            hosted_url = "https://checkout.stripe.com/c/pay/cs_bootstrap?test=1"
+        else:
+            due = 2000
+            hosted_url = "https://checkout.stripe.com/c/pay/cs_direct_refresh?test=1"
+        return {
+            "payment_method_types": ["card", "link"],
+            "total_summary": {"due": due},
+            "stripe_hosted_url": hosted_url,
+        }
+
+    monkeypatch.setattr(card.flow, "stripe_init", fake_init)
+
+    result, qr_urls = card.run_manual_card_flow(
+        "access-token",
+        "session-token",
+        "gb-checkout-proxy",
+        "tr-promotion-proxy",
+        "tr-provider-proxy",
+        [],
+        "device-id",
+        checkout(),
+        {},
+    )
+
+    assert qr_urls == []
+    assert result == "https://checkout.stripe.com/c/pay/cs_direct_refresh?test=1"
+    assert events == ["activate", "init", "init"]

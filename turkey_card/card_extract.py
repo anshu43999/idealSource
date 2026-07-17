@@ -285,14 +285,15 @@ def run_manual_card_flow(
         tr_payload = flow.stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
         _tr_ctx, tr_amount = inspect_card_init(checkout, tr_payload, "TR Provider 直接刷新")
         flow.record_checkout_zero_result(provider_proxy, "TR", tr_amount)
-        if tr_amount == 0:
-            manual_url = manual_card_url(tr_payload)
-            flow.log(f"Card 渠道可用，返回手动填写卡片页面: {manual_url[:180]}")
-            return manual_url, []
-        flow.log(
-            f"TR Provider 直接刷新后金额变为 {tr_amount}，继续尝试 TR checkout/update 转换",
-            "[WARN] ",
-        )
+        manual_url = manual_card_url(tr_payload)
+        flow.log(f"TR Provider direct refresh Card URL: {manual_url[:180]}")
+        if tr_amount != 0:
+            flow.log(
+                f"TR Provider direct refresh amount is not zero: {tr_amount}; "
+                "returning the direct refresh Stripe hosted URL",
+                "[WARN] ",
+            )
+        return manual_url, []
 
     if stop_event and stop_event.is_set():
         raise RuntimeError("任务已停止，跳过本轮")
