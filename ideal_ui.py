@@ -77,7 +77,7 @@ PAYMENT_METHODS: dict[str, dict[str, Any]] = {
     },
     "turkey_card": {
         "label": "Turkey Card",
-        "flow": "TR/GB/TR",
+        "flow": "GB/TR/TR",
         "available": True,
         "script_path": TURKEY_CARD_SCRIPT_PATH,
         "result_marker": "Turkey Card 最终支付 URL:",
@@ -121,7 +121,7 @@ PAYMENT_METHODS: dict[str, dict[str, Any]] = {
 
 PAYMENT_CHAIN_DEFAULTS: dict[str, tuple[str, str, str]] = {
     "ideal": ("NL", "VN", "NL"),
-    "turkey_card": ("TR", "GB", "TR"),
+    "turkey_card": ("GB", "TR", "TR"),
     "pix": ("BR", "BR", "BR"),
     "kakao_pay": ("KR", "VN", "KR"),
     "twint": ("CH", "VN", "CH"),
@@ -175,7 +175,7 @@ def payment_storage_paths(payment_method: str) -> tuple[Path, Path]:
     elif payment_method == "ideal":
         paths = IDEAL_PRIMARY_PROXY_SEED_PATH, TOKEN_PATH
     elif payment_method == "turkey_card":
-        paths = TURKEY_CARD_TR_PROXY_SEED_PATH, TURKEY_CARD_TOKEN_PATH
+        paths = TURKEY_CARD_GB_PROXY_SEED_PATH, TURKEY_CARD_TOKEN_PATH
     else:
         paths = PROXY_SEED_PATH, TOKEN_PATH
     return storage_file_path(paths[0]), storage_file_path(paths[1])
@@ -185,7 +185,7 @@ def manual_proxy_paths(payment_method: str) -> tuple[Path, Path] | None:
     if payment_method == "ideal":
         paths = IDEAL_PRIMARY_PROXY_SEED_PATH, IDEAL_PROMOTION_PROXY_SEED_PATH
     elif payment_method == "turkey_card":
-        paths = TURKEY_CARD_TR_PROXY_SEED_PATH, TURKEY_CARD_GB_PROXY_SEED_PATH
+        paths = TURKEY_CARD_GB_PROXY_SEED_PATH, TURKEY_CARD_TR_PROXY_SEED_PATH
     elif payment_method == "pix":
         paths = PIX_PRIMARY_PROXY_SEED_PATH, PIX_PROMOTION_PROXY_SEED_PATH
     elif payment_method == "kakao_pay":
@@ -421,8 +421,8 @@ def build_environment(
             promotion_country = "BR"
             provider_country = "BR"
         elif payment_method == "turkey_card":
-            bootstrap_country = "TR"
-            promotion_country = "GB"
+            bootstrap_country = "GB"
+            promotion_country = "TR"
             provider_country = "TR"
         else:
             bootstrap_country = clean_country_code(payload, "bootstrap_country", default_chain[0])
@@ -472,18 +472,18 @@ def build_environment(
         )
     elif payment_method == "turkey_card":
         primary_path, promotion_path = manual_proxy_paths(payment_method) or (
-            TURKEY_CARD_TR_PROXY_SEED_PATH,
             TURKEY_CARD_GB_PROXY_SEED_PATH,
+            TURKEY_CARD_TR_PROXY_SEED_PATH,
         )
         manual_checkout_proxy_file = resolve_proxy_file(
             clean_text(payload, "manual_checkout_proxy_file", str(primary_path)),
-            "Turkey Card TR 代理文件",
-        )
-        manual_provider_proxy_file = manual_checkout_proxy_file
-        manual_promotion_proxy_file = resolve_proxy_file(
-            clean_text(payload, "manual_promotion_proxy_file", str(promotion_path)),
             "Turkey Card GB 代理文件",
         )
+        manual_promotion_proxy_file = resolve_proxy_file(
+            clean_text(payload, "manual_promotion_proxy_file", str(promotion_path)),
+            "Turkey Card TR 代理文件",
+        )
+        manual_provider_proxy_file = manual_promotion_proxy_file
     if payment_method in MANUAL_PROXY_METHODS and not manual_checkout_proxy_file:
         primary_path, promotion_path = manual_proxy_paths(payment_method) or (KAKAO_KR_PROXY_SEED_PATH, KAKAO_VN_PROXY_SEED_PATH)
         manual_checkout_proxy_file = resolve_proxy_file(

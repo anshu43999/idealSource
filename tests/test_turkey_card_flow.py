@@ -33,8 +33,8 @@ def checkout() -> dict[str, str]:
     return {
         "cs_id": "cs_test_card",
         "stripe_pk": "pk_test_card",
-        "currency": "USD",
-        "billing_country": "TR",
+        "currency": "GBP",
+        "billing_country": "GB",
         "processor_entity": "openai_ie",
     }
 
@@ -67,8 +67,8 @@ def run_flow(monkeypatch, methods: list[str], events: list[str]) -> str:
     result, qr_urls = card.run_manual_card_flow(
         "access-token",
         "session-token",
-        "tr-checkout-proxy",
-        "gb-promotion-proxy",
+        "gb-checkout-proxy",
+        "tr-promotion-proxy",
         "tr-provider-proxy",
         [],
         "device-id",
@@ -80,21 +80,22 @@ def run_flow(monkeypatch, methods: list[str], events: list[str]) -> str:
 
 
 def test_turkey_card_country_chain():
-    assert card.flow.IDEAL_BOOTSTRAP_COUNTRY == "TR"
-    assert card.flow.IDEAL_PROMOTION_COUNTRY == "GB"
+    assert card.flow.IDEAL_BOOTSTRAP_COUNTRY == "GB"
+    assert card.flow.IDEAL_PROMOTION_COUNTRY == "TR"
     assert card.flow.IDEAL_PROVIDER_COUNTRY == "TR"
     assert card.flow.COUNTRY_CURRENCY["TR"] == "USD"
+    assert card.flow.COUNTRY_CURRENCY["GB"] == "GBP"
 
 
 def test_turkey_checkout_defers_promotion(monkeypatch):
     monkeypatch.setenv("IDEAL_DEFER_PROMO_TO_UPDATE", "1")
     chatgpt = FakeChatgptSession()
 
-    created = card.flow.create_checkout(chatgpt, "TR")
+    created = card.flow.create_checkout(chatgpt, "GB")
 
-    assert created["billing_country"] == "TR"
-    assert created["currency"] == "USD"
-    assert chatgpt.body["billing_details"] == {"country": "TR", "currency": "USD"}
+    assert created["billing_country"] == "GB"
+    assert created["currency"] == "GBP"
+    assert chatgpt.body["billing_details"] == {"country": "GB", "currency": "GBP"}
     assert "promo_campaign" not in chatgpt.body
     assert "coupon" not in chatgpt.body
 

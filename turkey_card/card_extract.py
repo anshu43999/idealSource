@@ -1,4 +1,4 @@
-"""Turkey Card flow: TR checkout -> GB update -> TR manual card page."""
+"""Turkey Card flow: GB checkout -> TR update -> TR manual card page."""
 
 from __future__ import annotations
 
@@ -14,17 +14,17 @@ ROOT = SCRIPT_DIR.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-os.environ.setdefault("IDEAL_BOOTSTRAP_COUNTRY", "TR")
-os.environ.setdefault("IDEAL_PROMOTION_COUNTRY", "GB")
+os.environ.setdefault("IDEAL_BOOTSTRAP_COUNTRY", "GB")
+os.environ.setdefault("IDEAL_PROMOTION_COUNTRY", "TR")
 os.environ.setdefault("IDEAL_PROVIDER_COUNTRY", "TR")
-os.environ.setdefault("IDEAL_CHECKOUT_COUNTRY", "TR")
+os.environ.setdefault("IDEAL_CHECKOUT_COUNTRY", "GB")
 os.environ.setdefault("IDEAL_BILLING_COUNTRY", "TR")
 os.environ.setdefault("IDEAL_STRIPE_PAYMENT_METHOD", "card")
 os.environ.setdefault("IDEAL_RESULT_LABEL", "Turkey Card 最终支付 URL")
 os.environ.setdefault("IDEAL_DEFER_PROMO_TO_UPDATE", "1")
 os.environ.setdefault("IDEAL_SKIP_BOOTSTRAP_INIT", "1")
-os.environ.setdefault("IDEAL_CHECKOUT_PROXY_FILE", str(SCRIPT_DIR / "tr_proxy_seeds.txt"))
-os.environ.setdefault("IDEAL_PROMOTION_PROXY_FILE", str(SCRIPT_DIR / "gb_proxy_seeds.txt"))
+os.environ.setdefault("IDEAL_CHECKOUT_PROXY_FILE", str(SCRIPT_DIR / "gb_proxy_seeds.txt"))
+os.environ.setdefault("IDEAL_PROMOTION_PROXY_FILE", str(SCRIPT_DIR / "tr_proxy_seeds.txt"))
 os.environ.setdefault("IDEAL_PROVIDER_PROXY_FILE", str(SCRIPT_DIR / "tr_proxy_seeds.txt"))
 
 import ideal_qr_extract as flow
@@ -42,12 +42,12 @@ def run_manual_card_flow(
     billing: dict[str, str],
     stop_event: Any = None,
 ) -> tuple[str, list[str]]:
-    """Apply the GB promotion, validate Card in TR, and return the hosted form."""
+    """Create from GB, convert through TR update, then return the hosted form."""
     del approve_pool, billing
     if stop_event and stop_event.is_set():
         raise RuntimeError("任务已停止，跳过本轮")
 
-    flow.log(f"GB checkout/update: proxy={flow.proxy_label(promotion_proxy)}")
+    flow.log(f"TR checkout/update: proxy={flow.proxy_label(promotion_proxy)}")
     try:
         chatgpt = flow.build_chatgpt_session(
             access_token, device_id, promotion_proxy, session_token
@@ -65,7 +65,7 @@ def run_manual_card_flow(
         raise RuntimeError("任务已停止，跳过本轮")
 
     flow.log(
-        "GB checkout/update 后通过 TR Stripe Init 校验 Card: "
+        "TR checkout/update 后通过 TR Stripe Init 校验 Card 与 0 元金额: "
         f"proxy={flow.proxy_label(provider_proxy)}"
     )
     stripe_pk = checkout.get("stripe_pk") or flow.DEFAULT_STRIPE_PK
@@ -83,8 +83,12 @@ def run_manual_card_flow(
         )
 
     amount = flow.amount_from_payload(init_payload)
-    flow.log(f"TR Stripe Init 成功, 金额={checkout['currency']} {amount / 100:.2f}")
-    flow.record_checkout_zero_result(checkout_proxy, "TR", amount)
+    currency_value = flow.first_value_by_key(init_payload, "currency")
+    currency = str(currency_value or checkout.get("currency") or "").upper()
+    if not currency:
+        currency = "UNKNOWN"
+    flow.log(f"TR Stripe Init 成功, 金额={currency} {amount / 100:.2f}")
+    flow.record_checkout_zero_result(provider_proxy, "TR", amount)
     if amount != 0:
         raise RuntimeError(
             f"0 元优惠未生效，当前金额小单位={amount}，已停止生成手动 Card 支付链接"
@@ -104,10 +108,10 @@ def configure_flow() -> None:
     flow.DUMP_DIR.mkdir(parents=True, exist_ok=True)
     flow._log_file = flow.LOG_DIR / f"turkey_card_{time.strftime('%Y%m%d-%H%M%S')}.log"
     # ChatGPT checkout accepts TR as a billing country, but TRY is not in its
-    # checkout currency enum. Keep the TR country/proxy chain and settle in USD.
+    # checkout currency enum. TR is only used for update/final Stripe Init.
     flow.COUNTRY_CURRENCY.update({"TR": "USD", "GB": "GBP"})
-    flow.IDEAL_BOOTSTRAP_COUNTRY = "TR"
-    flow.IDEAL_PROMOTION_COUNTRY = "GB"
+    flow.IDEAL_BOOTSTRAP_COUNTRY = "GB"
+    flow.IDEAL_PROMOTION_COUNTRY = "TR"
     flow.IDEAL_PROVIDER_COUNTRY = "TR"
     flow.EXPECTED_PAYMENT_METHOD_TYPE = "card"
     flow.RESULT_LABEL = "Turkey Card 最终支付 URL"

@@ -902,7 +902,7 @@
     const providerCountryInput = document.getElementById('providerCountry');
     const COUNTRY_CHAIN_DEFAULTS = {
       ideal: { bootstrap: 'NL', promotion: 'VN', provider: 'NL' },
-      turkey_card: { bootstrap: 'TR', promotion: 'GB', provider: 'TR' },
+      turkey_card: { bootstrap: 'GB', promotion: 'TR', provider: 'TR' },
       pix: { bootstrap: 'BR', promotion: 'BR', provider: 'BR' },
       kakao_pay: { bootstrap: 'KR', promotion: 'VN', provider: 'KR' },
       twint: { bootstrap: 'CH', promotion: 'VN', provider: 'CH' },
@@ -1117,7 +1117,7 @@
           isPix
             ? 'PIX 固定七步 BR 链路：主 BR 创建 checkout 并首次 init 校验 PIX；第二组 BR 应用优惠和同步税务；返回主 BR 校验 0 元后创建 PIX，最后 confirm、approve、poll。'
             : isTurkeyCard
-            ? 'Turkey Card 固定链路：TR 创建 Checkout，GB 执行 checkout/update，TR 校验 Card 后输出手动填写卡片的支付页面。'
+            ? 'Turkey Card 固定链路：GB 创建非 0 Checkout，TR 执行 checkout/update 并通过 TR Stripe Init 校验 0 元 Card 页面。'
             : `${paymentLabel}：第一段用于 Checkout 与首次 Stripe init，第二段用于 checkout/update，第三段用于 Stripe refresh、税务、PM、confirm 与 approve。`;
       }
       document.getElementById('batchSizeLabel').textContent = isKakao
@@ -1151,17 +1151,17 @@
       document.getElementById('proxySeedsHint').textContent = isBLIK
         ? '点击启动后保存到 BLIK 专用 proxy_seeds.txt。每条 Seed 固定派生：PL checkout → PL Stripe/BLIK → PL approve；本次失败的 Seed 不会再次抽取。'
         : isManualProxyMethod
-        ? `${paymentLabel} 会分别保存 ${chain.bootstrap} 与 ${chain.promotion} 代理文件；checkout/provider 走 ${chain.bootstrap}，checkout/update 走 ${chain.promotion}，不再自动改写 country/region。`
+        ? `${paymentLabel} 会分别保存 ${chain.bootstrap} 与 ${chain.promotion} 代理文件；checkout 走 ${chain.bootstrap}，checkout/update 与最终 Stripe Init 走 ${chain.provider}，不再自动改写 country/region。`
         : `点击启动后保存到 ${isPix ? 'PIX 专用 ' : isTwint ? 'TWINT 专用 ' : isUpi ? 'UPI 专用 ' : ''}proxy_seeds.txt。每条 Seed 固定派生：${chain.bootstrap} checkout/Bootstrap Stripe init → ${chain.promotion} checkout/update → ${chain.provider} Stripe refresh/taxes/${paymentStageLabel}/approve；本次失败的 Seed 不会再次抽取。`;
       document.getElementById('proxyChainValue').textContent = isBLIK
         ? 'PL → PL Stripe/BLIK → PL approve'
         : isTurkeyCard
-        ? 'TR checkout → GB update → TR Stripe Init/Card 页面'
+        ? 'GB checkout → TR update → TR Stripe Init/Card 页面'
         : `${chain.bootstrap} checkout → ${chain.promotion} update → ${chain.provider} Stripe/${paymentStageLabel}/approve`;
       document.getElementById('proxyChainHint').textContent = isBLIK
         ? '三个阶段复用同一 sticky session'
         : isTurkeyCard
-        ? 'TR Stripe Init 只校验 Card 渠道并输出手动填卡页面'
+        ? 'TR Stripe Init 校验 Card 渠道与 0 元金额后输出手动填卡页面'
         : isKakao
         ? 'Kakao 手动代理模式下，第一段与第三段必须使用同一国家的代理池'
         : '同一 Seed 贯穿页面设置的三段地区链路';
@@ -1180,9 +1180,9 @@
         document.querySelector('label[for="kakaoVnProxies"]').textContent = `${chain.promotion} 代理`;
         if (isTurkeyCard) {
           document.getElementById('kakaoKrProxyHint').textContent =
-            '用于 TR checkout 与 Stripe Init/Card 渠道校验。';
+            '用于 GB 非 0 checkout 创建。';
           document.getElementById('kakaoVnProxyHint').textContent =
-            '只用于 GB checkout/update；卡片信息在最终支付页面手动填写。';
+            '用于 TR checkout/update 与最终 Stripe Init/Card 0 元校验；卡片信息在最终支付页面手动填写。';
         } else if (isPix) {
           document.getElementById('seedCountLabel').textContent = 'BR + BR代理';
           document.querySelector('label[for="kakaoKrProxies"]').textContent = 'BR 主链路代理';
