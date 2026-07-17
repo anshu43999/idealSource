@@ -30,6 +30,107 @@ os.environ.setdefault("IDEAL_PROVIDER_PROXY_FILE", str(SCRIPT_DIR / "tr_proxy_se
 import ideal_qr_extract as flow
 
 
+TURKEY_BILLING = {
+    "email": "redacted@example.invalid",
+    "name": "Mehmet Yilmaz",
+    "country": "TR",
+    "line1": "Istiklal Caddesi 10",
+    "line2": "",
+    "city": "Istanbul",
+    "postal_code": "34433",
+    "state": "",
+}
+
+
+def turkey_billing_profile() -> dict[str, str]:
+    profile = dict(TURKEY_BILLING)
+    env_map = {
+        "email": "IDEAL_EMAIL",
+        "name": "IDEAL_NAME",
+        "line1": "IDEAL_LINE1",
+        "line2": "IDEAL_LINE2",
+        "city": "IDEAL_CITY",
+        "postal_code": "IDEAL_POSTAL_CODE",
+        "state": "IDEAL_STATE",
+    }
+    for key, env_name in env_map.items():
+        value = os.environ.get(env_name, "").strip()
+        if value:
+            profile[key] = value
+    profile["country"] = "TR"
+    return profile
+
+
+def update_turkey_checkout_taxes(
+    chatgpt: Any,
+    checkout: dict[str, str],
+    billing: dict[str, str],
+) -> None:
+    url = "https://chatgpt.com/backend-api/payments/checkout/taxes"
+    body = {
+        "checkout_session_id": checkout["cs_id"],
+        "checkout_email": billing["email"],
+        "billing_country": "TR",
+        "billing_name": billing["name"],
+        "currency": flow.currency_for_country("TR"),
+        "tax_id": None,
+        "processor_entity": flow.processor_entity_for_country(
+            flow.IDEAL_BOOTSTRAP_COUNTRY,
+            checkout.get("processor_entity") or "",
+        ),
+        "billing_address": {
+            "line1": billing["line1"],
+            "city": billing["city"],
+            "country": "TR",
+            "postal_code": billing["postal_code"],
+        },
+    }
+    if billing.get("state"):
+        body["billing_address"]["state"] = billing["state"]
+    resp = chatgpt.post(
+        url,
+        json=body,
+        headers={
+            "Referer": flow.checkout_page_url(checkout),
+            "x-openai-target-path": "/backend-api/payments/checkout/taxes",
+            "x-openai-target-route": "/backend-api/payments/checkout/taxes",
+        },
+        timeout=flow.CHATGPT_TIMEOUT,
+    )
+    flow.dump_http(resp, "turkey_checkout_taxes", body, "POST", url, force=resp.status_code >= 400)
+    if resp.status_code >= 400:
+        if flow.is_checkout_not_active_error(resp.text):
+            raise RuntimeError("checkout_not_active_session")
+        raise RuntimeError(f"TR checkout/taxes 失败 HTTP {resp.status_code}: {resp.text[:500]}")
+    flow.log(f"TR checkout/taxes 同步成功: currency={flow.currency_for_country('TR')}")
+
+
+def inspect_card_init(
+    checkout: dict[str, str],
+    init_payload: dict[str, Any],
+    stage: str,
+) -> tuple[dict[str, Any], int]:
+    methods_value = flow.first_value_by_key(init_payload, "payment_method_types")
+    methods = (
+        [str(item).lower() for item in methods_value]
+        if isinstance(methods_value, list)
+        else []
+    )
+    flow.log(f"{stage} Stripe 可用支付方式: {methods}")
+    if "card" not in methods:
+        raise RuntimeError(
+            f"{flow.IDEAL_UNAVAILABLE_ERROR}: payment_method_types={methods}"
+        )
+
+    amount = flow.amount_from_payload(init_payload)
+    currency_value = flow.first_value_by_key(init_payload, "currency")
+    currency = str(currency_value or checkout.get("currency") or "").upper()
+    if not currency:
+        currency = "UNKNOWN"
+    flow.log(f"{stage} Stripe Init 成功, 金额={currency} {amount / 100:.2f}")
+    return flow.build_ctx(init_payload, checkout), amount
+
+
 def run_manual_card_flow(
     access_token: str,
     session_token: str,
@@ -44,6 +145,7 @@ def run_manual_card_flow(
 ) -> tuple[str, list[str]]:
     """Create from GB, convert through TR update, then return the hosted form."""
     del approve_pool, billing
+    tr_billing = turkey_billing_profile()
     if stop_event and stop_event.is_set():
         raise RuntimeError("任务已停止，跳过本轮")
 
@@ -53,6 +155,7 @@ def run_manual_card_flow(
             access_token, device_id, promotion_proxy, session_token
         )
         flow.update_checkout_promotion(chatgpt, checkout)
+        update_turkey_checkout_taxes(chatgpt, checkout, tr_billing)
     except Exception as exc:
         if flow.is_checkout_not_active_error(exc):
             raise
@@ -70,24 +173,19 @@ def run_manual_card_flow(
     )
     stripe_pk = checkout.get("stripe_pk") or flow.DEFAULT_STRIPE_PK
     init_payload = flow.stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
-    methods_value = flow.first_value_by_key(init_payload, "payment_method_types")
-    methods = (
-        [str(item).lower() for item in methods_value]
-        if isinstance(methods_value, list)
-        else []
+    ctx, amount = inspect_card_init(checkout, init_payload, "TR checkout/taxes 后")
+    flow.log("提交 TR Stripe tax_region 并重新刷新 Stripe Init...")
+    stripe = flow.new_session(provider_proxy)
+    stripe.headers.update(
+        {
+            "User-Agent": flow.random_user_agent(),
+            "Accept-Language": flow.payment_accept_language(),
+        }
     )
-    flow.log(f"Stripe 可用支付方式: {methods}")
-    if "card" not in methods:
-        raise RuntimeError(
-            f"{flow.IDEAL_UNAVAILABLE_ERROR}: payment_method_types={methods}"
-        )
-
-    amount = flow.amount_from_payload(init_payload)
-    currency_value = flow.first_value_by_key(init_payload, "currency")
-    currency = str(currency_value or checkout.get("currency") or "").upper()
-    if not currency:
-        currency = "UNKNOWN"
-    flow.log(f"TR Stripe Init 成功, 金额={currency} {amount / 100:.2f}")
+    if not flow.stripe_update_tax_region(stripe, checkout["cs_id"], stripe_pk, ctx, tr_billing):
+        raise RuntimeError("TR Stripe tax_region 提交失败，无法确认 0 元状态")
+    init_payload = flow.stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
+    _ctx, amount = inspect_card_init(checkout, init_payload, "TR tax_region 后")
     flow.record_checkout_zero_result(provider_proxy, "TR", amount)
     if amount != 0:
         raise RuntimeError(

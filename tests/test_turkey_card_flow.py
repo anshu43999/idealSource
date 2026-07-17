@@ -50,6 +50,11 @@ def run_flow(monkeypatch, methods: list[str], events: list[str]) -> str:
         "update_checkout_promotion",
         lambda *args, **kwargs: events.append("update"),
     )
+    monkeypatch.setattr(
+        card,
+        "update_turkey_checkout_taxes",
+        lambda *args, **kwargs: events.append("taxes"),
+    )
 
     def fake_init(*args, **kwargs):
         events.append("init")
@@ -62,6 +67,13 @@ def run_flow(monkeypatch, methods: list[str], events: list[str]) -> str:
         }
 
     monkeypatch.setattr(card.flow, "stripe_init", fake_init)
+    monkeypatch.setattr(card.flow, "build_ctx", lambda payload, checkout: {})
+    monkeypatch.setattr(card.flow, "new_session", lambda *args, **kwargs: SimpleNamespace(headers={}))
+    monkeypatch.setattr(
+        card.flow,
+        "stripe_update_tax_region",
+        lambda *args, **kwargs: events.append("tax_region") or True,
+    )
     monkeypatch.setattr(card.flow, "record_proxy_result", lambda *args: None)
     monkeypatch.setattr(card.flow, "record_checkout_zero_result", lambda *args: None)
     result, qr_urls = card.run_manual_card_flow(
@@ -105,7 +117,7 @@ def test_manual_card_flow_updates_then_initializes(monkeypatch):
 
     result = run_flow(monkeypatch, ["card", "link"], events)
 
-    assert events == ["update", "init"]
+    assert events == ["update", "taxes", "init", "tax_region", "init"]
     assert result == "https://pay.openai.com/c/pay/cs_test_card?test=1"
 
 
@@ -123,6 +135,7 @@ def test_manual_card_flow_rejects_missing_card(monkeypatch):
 def test_manual_card_flow_falls_back_to_checkout_page(monkeypatch):
     monkeypatch.setattr(card.flow, "build_chatgpt_session", lambda *args: object())
     monkeypatch.setattr(card.flow, "update_checkout_promotion", lambda *args: None)
+    monkeypatch.setattr(card, "update_turkey_checkout_taxes", lambda *args: None)
     monkeypatch.setattr(
         card.flow,
         "stripe_init",
@@ -131,6 +144,9 @@ def test_manual_card_flow_falls_back_to_checkout_page(monkeypatch):
             "total_summary": {"due": 0},
         },
     )
+    monkeypatch.setattr(card.flow, "build_ctx", lambda payload, checkout: {})
+    monkeypatch.setattr(card.flow, "new_session", lambda *args, **kwargs: SimpleNamespace(headers={}))
+    monkeypatch.setattr(card.flow, "stripe_update_tax_region", lambda *args: True)
     monkeypatch.setattr(card.flow, "record_proxy_result", lambda *args: None)
     monkeypatch.setattr(card.flow, "record_checkout_zero_result", lambda *args: None)
 
@@ -147,3 +163,17 @@ def test_manual_card_flow_falls_back_to_checkout_page(monkeypatch):
     )
 
     assert result == card.flow.checkout_page_url(checkout())
+
+
+def test_turkey_checkout_taxes_uses_tr_currency():
+    session = FakeChatgptSession()
+
+    card.update_turkey_checkout_taxes(
+        session,
+        checkout(),
+        card.turkey_billing_profile(),
+    )
+
+    assert session.body["billing_country"] == "TR"
+    assert session.body["currency"] == "USD"
+    assert session.body["billing_address"]["country"] == "TR"
