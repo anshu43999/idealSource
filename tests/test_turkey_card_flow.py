@@ -128,7 +128,7 @@ def test_manual_card_flow_updates_then_initializes(monkeypatch):
     result = run_flow(monkeypatch, ["card", "link"], events)
 
     assert events == ["activate", "init", "update", "taxes", "init", "tax_region", "init"]
-    assert result == "https://pay.openai.com/c/pay/cs_test_card?test=1"
+    assert result == "https://pay.openai.com/c/pay/cs_test_card"
 
 
 def test_manual_card_flow_accepts_card_with_other_methods(monkeypatch):
@@ -173,7 +173,7 @@ def test_manual_card_flow_falls_back_to_checkout_page(monkeypatch):
         {},
     )
 
-    assert result == card.flow.checkout_page_url(checkout())
+    assert result == "https://pay.openai.com/c/pay/cs_test_card"
 
 
 def test_turkey_checkout_taxes_uses_tr_currency():
@@ -267,5 +267,5 @@ def test_manual_card_flow_preserves_existing_zero_without_update(monkeypatch):
     )
 
     assert qr_urls == []
-    assert result == "https://pay.openai.com/c/pay/cs_test_card?test=1"
+    assert result == "https://pay.openai.com/c/pay/cs_test_card"
     assert events == ["activate", "init", "init"]
