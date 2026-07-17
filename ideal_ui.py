@@ -280,26 +280,6 @@ def clean_text(payload: dict[str, Any], name: str, default: str = "", limit: int
     return value
 
 
-def normalize_card_number(value: str) -> str:
-    return re.sub(r"\D+", "", str(value or ""))
-
-
-def card_number_is_valid(value: str) -> bool:
-    number = normalize_card_number(value)
-    if not 12 <= len(number) <= 19:
-        return False
-    total = 0
-    parity = len(number) % 2
-    for index, char in enumerate(number):
-        digit = int(char)
-        if index % 2 == parity:
-            digit *= 2
-            if digit > 9:
-                digit -= 9
-        total += digit
-    return total % 10 == 0
-
-
 def clean_country_code(payload: dict[str, Any], name: str, default: str) -> str:
     value = clean_text(payload, name, default, 2).upper()
     if not COUNTRY_CODE_RE.fullmatch(value):
@@ -469,21 +449,6 @@ def build_environment(
         if not blik_code.isdigit() or len(blik_code) != 6:
             raise ValueError("BLIK Code 必须是6位数字")
 
-    card_number = normalize_card_number(clean_text(payload, "card_number", "", 32))
-    card_exp_month = clean_text(payload, "card_exp_month", "", 2)
-    card_exp_year = clean_text(payload, "card_exp_year", "", 4)
-    card_cvc = re.sub(r"\D+", "", clean_text(payload, "card_cvc", "", 4))
-    card_holder = clean_text(payload, "card_holder", "", 120)
-    if payment_method == "turkey_card":
-        if not card_number_is_valid(card_number):
-            raise ValueError("Turkey Card 卡号无效")
-        if not card_exp_month.isdigit() or not 1 <= int(card_exp_month) <= 12:
-            raise ValueError("Turkey Card 有效期月份无效")
-        if not card_exp_year.isdigit() or len(card_exp_year) not in {2, 4}:
-            raise ValueError("Turkey Card 有效期年份无效")
-        if len(card_cvc) not in {3, 4}:
-            raise ValueError("Turkey Card CVC 无效")
-
     promo_mode = clean_text(payload, "promo_mode", "campaign", 20).lower()
     if promo_mode not in {"coupon", "campaign", "query", "trial", "free_trial", "code", "off"}:
         raise ValueError("优惠模式不正确")
@@ -548,11 +513,6 @@ def build_environment(
         "IDEAL_RESULT_LABEL",
         "IDEAL_DEFER_PROMO_TO_UPDATE",
         "IDEAL_SKIP_BOOTSTRAP_INIT",
-        "TURKEY_CARD_NUMBER",
-        "TURKEY_CARD_EXP_MONTH",
-        "TURKEY_CARD_EXP_YEAR",
-        "TURKEY_CARD_CVC",
-        "TURKEY_CARD_HOLDER",
         "PP_CHECKOUT_PROXY_FILE",
         "PP_PROMOTION_PROXY_FILE",
         "PP_PROVIDER_PROXY_FILE",
@@ -795,11 +755,6 @@ def build_environment(
                     "IDEAL_RESULT_LABEL": "Turkey Card 最终支付 URL",
                     "IDEAL_DEFER_PROMO_TO_UPDATE": "1",
                     "IDEAL_SKIP_BOOTSTRAP_INIT": "1",
-                    "TURKEY_CARD_NUMBER": card_number,
-                    "TURKEY_CARD_EXP_MONTH": card_exp_month,
-                    "TURKEY_CARD_EXP_YEAR": card_exp_year,
-                    "TURKEY_CARD_CVC": card_cvc,
-                    "TURKEY_CARD_HOLDER": card_holder,
                 }
             )
         env.pop("IDEAL_BLIK_CODE", None)

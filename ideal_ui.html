@@ -726,7 +726,7 @@
                 <label>三段地区链路</label>
                 <div class="country-chain-grid">
                   <div class="country-chain-input">
-                    <label for="bootstrapCountry">Checkout / 首次 Stripe</label>
+                    <label for="bootstrapCountry" id="bootstrapCountryLabel">Checkout / 首次 Stripe</label>
                     <input id="bootstrapCountry" name="bootstrap_country" type="text" value="NL" maxlength="2" pattern="[A-Za-z]{2}" autocapitalize="characters" spellcheck="false" required>
                   </div>
                   <div class="country-chain-input">
@@ -734,7 +734,7 @@
                     <input id="promotionCountry" name="promotion_country" type="text" value="VN" maxlength="80" pattern="[A-Za-z]{2}(\s*,\s*[A-Za-z]{2})*" autocapitalize="characters" spellcheck="false" required>
                   </div>
                   <div class="country-chain-input">
-                    <label for="providerCountry">Stripe / 税务 / PM / approve</label>
+                    <label for="providerCountry" id="providerCountryLabel">Stripe / 税务 / PM / approve</label>
                     <input id="providerCountry" name="provider_country" type="text" value="NL" maxlength="2" pattern="[A-Za-z]{2}" autocapitalize="characters" spellcheck="false" required>
                   </div>
                 </div>
@@ -778,26 +778,6 @@
               <div class="field" id="blikCodeField" hidden>
                 <label for="blikCode">BLIK Code</label>
                 <input id="blikCode" name="blik_code" type="text" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="请输入6位BLIK Code" autocomplete="one-time-code">
-              </div>
-              <div class="field full turkey-card-field" hidden>
-                <label for="cardNumber">卡号</label>
-                <input id="cardNumber" name="card_number" type="text" inputmode="numeric" maxlength="23" pattern="[0-9 -]{12,23}" placeholder="输入 Turkey Card 卡号" autocomplete="cc-number" data-card-required>
-              </div>
-              <div class="field turkey-card-field" hidden>
-                <label for="cardHolder">持卡人姓名</label>
-                <input id="cardHolder" name="card_holder" type="text" maxlength="120" placeholder="留空使用土耳其账单姓名" autocomplete="cc-name">
-              </div>
-              <div class="field turkey-card-field" hidden>
-                <label for="cardCvc">CVC</label>
-                <input id="cardCvc" name="card_cvc" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{3,4}" placeholder="3 或 4 位" autocomplete="cc-csc" data-card-required>
-              </div>
-              <div class="field turkey-card-field" hidden>
-                <label for="cardExpMonth">有效期月份</label>
-                <input id="cardExpMonth" name="card_exp_month" type="number" min="1" max="12" placeholder="MM" autocomplete="cc-exp-month" data-card-required>
-              </div>
-              <div class="field turkey-card-field" hidden>
-                <label for="cardExpYear">有效期年份</label>
-                <input id="cardExpYear" name="card_exp_year" type="number" min="2026" max="2099" placeholder="YYYY" autocomplete="cc-exp-year" data-card-required>
               </div>
               <div class="field">
                 <label for="promoMode">优惠模式</label>
@@ -915,7 +895,6 @@
     const blikCodeField = document.getElementById('blikCodeField');
     const blikCodeInput = document.getElementById('blikCode');
     const bankField = document.getElementById('bankField');
-    const turkeyCardFields = [...document.querySelectorAll('.turkey-card-field')];
     const preProxyField = document.getElementById('preProxyField');
     const countryChainField = document.getElementById('countryChainField');
     const bootstrapCountryInput = document.getElementById('bootstrapCountry');
@@ -1116,12 +1095,6 @@
       updateResultCopy();
       blikCodeField.hidden = !isBLIK;
       bankField.hidden = isBLIK || isKakao || isPix || isTwint || isUpi || isTurkeyCard;
-      for (const field of turkeyCardFields) {
-        field.hidden = !isTurkeyCard;
-        const input = field.querySelector('input');
-        input.disabled = !isTurkeyCard;
-        input.required = isTurkeyCard && input.hasAttribute('data-card-required');
-      }
       proxySeedsField.hidden = isManualProxyMethod;
       kakaoKrProxyField.hidden = !isManualProxyMethod;
       kakaoVnProxyField.hidden = !isManualProxyMethod;
@@ -1144,7 +1117,7 @@
           isPix
             ? 'PIX 固定七步 BR 链路：主 BR 创建 checkout 并首次 init 校验 PIX；第二组 BR 应用优惠和同步税务；返回主 BR 校验 0 元后创建 PIX，最后 confirm、approve、poll。'
             : isTurkeyCard
-            ? 'Turkey Card 固定链路：TR 创建 Checkout，GB 执行 checkout/update，TR 创建 Card PM、confirm、approve 并轮询结果。'
+            ? 'Turkey Card 固定链路：TR 创建 Checkout，GB 执行 checkout/update，TR 校验 Card 后输出手动填写卡片的支付页面。'
             : `${paymentLabel}：第一段用于 Checkout 与首次 Stripe init，第二段用于 checkout/update，第三段用于 Stripe refresh、税务、PM、confirm 与 approve。`;
       }
       document.getElementById('batchSizeLabel').textContent = isKakao
@@ -1182,9 +1155,13 @@
         : `点击启动后保存到 ${isPix ? 'PIX 专用 ' : isTwint ? 'TWINT 专用 ' : isUpi ? 'UPI 专用 ' : ''}proxy_seeds.txt。每条 Seed 固定派生：${chain.bootstrap} checkout/Bootstrap Stripe init → ${chain.promotion} checkout/update → ${chain.provider} Stripe refresh/taxes/${paymentStageLabel}/approve；本次失败的 Seed 不会再次抽取。`;
       document.getElementById('proxyChainValue').textContent = isBLIK
         ? 'PL → PL Stripe/BLIK → PL approve'
+        : isTurkeyCard
+        ? 'TR checkout → GB update → TR Stripe Init/Card 页面'
         : `${chain.bootstrap} checkout → ${chain.promotion} update → ${chain.provider} Stripe/${paymentStageLabel}/approve`;
       document.getElementById('proxyChainHint').textContent = isBLIK
         ? '三个阶段复用同一 sticky session'
+        : isTurkeyCard
+        ? 'TR Stripe Init 只校验 Card 渠道并输出手动填卡页面'
         : isKakao
         ? 'Kakao 手动代理模式下，第一段与第三段必须使用同一国家的代理池'
         : '同一 Seed 贯穿页面设置的三段地区链路';
@@ -1201,7 +1178,12 @@
         document.getElementById('seedCountLabel').textContent = isPix ? `${chain.bootstrap}代理` : `${chain.bootstrap}/${chain.promotion}代理`;
         document.querySelector('label[for="kakaoKrProxies"]').textContent = `${chain.bootstrap} 代理`;
         document.querySelector('label[for="kakaoVnProxies"]').textContent = `${chain.promotion} 代理`;
-        if (isPix) {
+        if (isTurkeyCard) {
+          document.getElementById('kakaoKrProxyHint').textContent =
+            '用于 TR checkout 与 Stripe Init/Card 渠道校验。';
+          document.getElementById('kakaoVnProxyHint').textContent =
+            '只用于 GB checkout/update；卡片信息在最终支付页面手动填写。';
+        } else if (isPix) {
           document.getElementById('seedCountLabel').textContent = 'BR + BR代理';
           document.querySelector('label[for="kakaoKrProxies"]').textContent = 'BR 主链路代理';
           document.querySelector('label[for="kakaoVnProxies"]').textContent = 'BR 优惠/税务代理';
@@ -1215,13 +1197,23 @@
       }
       document.getElementById('billingCountryLabel').textContent = isBLIK
         ? 'BLIK账单国家'
+        : isTurkeyCard
+        ? 'Card 页面国家'
         : `${paymentLabel}账单国家`;
       document.getElementById('billingCountryValue').textContent = isBLIK
         ? 'PL · Poland'
         : countryDisplay(chain.provider);
       document.getElementById('billingCountryHint').textContent = isBLIK
         ? '固定用于 BLIK 提交'
+        : isTurkeyCard
+        ? '固定为 TR；卡片信息只在最终支付页面手动填写'
         : `跟随第三段地区，用于 ${paymentLabel} Payment Method 与税务同步`;
+      document.getElementById('bootstrapCountryLabel').textContent = isTurkeyCard
+        ? 'Checkout'
+        : 'Checkout / 首次 Stripe';
+      document.getElementById('providerCountryLabel').textContent = isTurkeyCard
+        ? 'Stripe Init / Card 页面'
+        : 'Stripe / 税务 / PM / approve';
       document.getElementById('paymentSettingsDescription').textContent = isBLIK
         ? 'BLIK Code 与优惠设置'
         : isKakao
@@ -1233,7 +1225,7 @@
         : isUpi
         ? 'UPI 与优惠设置'
         : isTurkeyCard
-        ? 'Turkey Card 与优惠设置'
+        ? 'Turkey Card 优惠设置'
         : '优惠与银行';
       if (isBLIK) resultBox.hidden = true;
       if (isConfigurableChain) {
@@ -1477,11 +1469,6 @@
       delete safe.token;
       delete safe.session_token;
       delete safe.blik_code;
-      delete safe.card_number;
-      delete safe.card_exp_month;
-      delete safe.card_exp_year;
-      delete safe.card_cvc;
-      delete safe.card_holder;
       delete safe.proxy_seeds;
       delete safe.manual_primary_proxies;
       delete safe.manual_promotion_proxies;
@@ -1500,7 +1487,7 @@
           return;
         }
         let removedSensitiveConfig = false;
-        for (const name of ['proxy_seeds', 'manual_primary_proxies', 'manual_promotion_proxies', 'kakao_kr_proxies', 'kakao_vn_proxies', 'pre_proxy', 'token', 'session_token', 'blik_code', 'card_number', 'card_exp_month', 'card_exp_year', 'card_cvc', 'card_holder']) {
+        for (const name of ['proxy_seeds', 'manual_primary_proxies', 'manual_promotion_proxies', 'kakao_kr_proxies', 'kakao_vn_proxies', 'pre_proxy', 'token', 'session_token', 'blik_code']) {
           if (!Object.hasOwn(saved, name)) continue;
           delete saved[name];
           removedSensitiveConfig = true;

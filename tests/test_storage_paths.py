@@ -91,11 +91,6 @@ class StoragePathTests(unittest.TestCase):
             "bootstrap_country": "US",
             "promotion_country": "US",
             "provider_country": "US",
-            "card_number": "4242 4242 4242 4242",
-            "card_exp_month": "12",
-            "card_exp_year": "2030",
-            "card_cvc": "123",
-            "card_holder": "Emir Yilmaz",
         }
 
         with patch.object(Path, "is_file", return_value=True):
@@ -109,9 +104,9 @@ class StoragePathTests(unittest.TestCase):
         self.assertEqual(env["IDEAL_PROMOTION_COUNTRY"], "GB")
         self.assertEqual(env["IDEAL_PROVIDER_COUNTRY"], "TR")
         self.assertEqual(env["IDEAL_STRIPE_PAYMENT_METHOD"], "card")
-        self.assertEqual(env["TURKEY_CARD_NUMBER"], "4242424242424242")
-        self.assertNotIn("card_number", public_config)
-        self.assertNotIn("card_cvc", public_config)
+        self.assertEqual(env["IDEAL_DEFER_PROMO_TO_UPDATE"], "1")
+        self.assertEqual(env["IDEAL_SKIP_BOOTSTRAP_INIT"], "1")
+        self.assertFalse(any(name.startswith("TURKEY_CARD_") for name in env))
 
 
 if __name__ == "__main__":

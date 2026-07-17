@@ -1,6 +1,6 @@
 # Payment Link Extractor
 
-Supported methods include iDEAL, Turkey Card (`TR checkout -> GB update -> TR Stripe/Card/approve`), PIX, Kakao Pay, BLIK, TWINT, and UPI.
+Supported methods include iDEAL, Turkey Card (`TR checkout -> GB update -> TR manual card page`), PIX, Kakao Pay, BLIK, TWINT, and UPI.
 
 本项目提供一个本地支付提链控制台，支持 iDEAL、Turkey Card、PIX、Kakao Pay、BLIK、TWINT 和 UPI。每种方式使用独立的代理池与 Token 文件；界面在切换方式时读取当前方式的已保存配置。
 
