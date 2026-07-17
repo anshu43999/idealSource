@@ -78,6 +78,13 @@ DUMP_DIR.mkdir(parents=True, exist_ok=True)
 DEFAULT_TIMEOUT = 30
 CHATGPT_TIMEOUT = 45
 IDEAL_UNAVAILABLE_ERROR = "当前账号支付方式不支持 iDEAL"
+EXPECTED_PAYMENT_METHOD_TYPE = (
+    os.environ.get("IDEAL_STRIPE_PAYMENT_METHOD", "ideal").strip().lower() or "ideal"
+)
+RESULT_LABEL = (
+    os.environ.get("IDEAL_RESULT_LABEL", "iDEAL 最终扫码/授权 URL").strip()
+    or "iDEAL 最终扫码/授权 URL"
+)
 STRIPE_VERSION_FULL = (
     "2025-03-31.basil; checkout_server_update_beta=v1; "
     "checkout_manual_approval_preview=v1"
@@ -1303,13 +1310,16 @@ def create_checkout(chatgpt: requests.Session, country: str) -> dict[str, str]:
     country = normalize_country(country)
     promo_mode = os.environ.get("PP_PROMO_MODE", "campaign").strip().lower() or "campaign"
     promo_id = os.environ.get("PP_PROMO_ID", "plus-1-month-free").strip()
+    defer_promo = env_bool("IDEAL_DEFER_PROMO_TO_UPDATE", False)
     body: dict[str, Any] = {
         "entry_point": os.environ.get("PP_ENTRY_POINT", "all_plans_pricing_modal"),
         "plan_name": "chatgptplusplan",
         "billing_details": {"country": country, "currency": currency_for_country(country)},
         "checkout_ui_mode": "custom",
     }
-    if promo_mode in ("trial", "free_trial"):
+    if defer_promo:
+        log(f"Checkout promo deferred to checkout/update: mode={promo_mode}, id={promo_id}")
+    elif promo_mode in ("trial", "free_trial"):
         trial_days = env_int("PP_TRIAL_DAYS", 30)
         body["subscription_data"] = {"trial_period_days": trial_days}
     elif promo_mode in ("campaign", "query"):
@@ -1323,7 +1333,8 @@ def create_checkout(chatgpt: requests.Session, country: str) -> dict[str, str]:
         body["promotion_code"] = promo_id
     elif promo_mode != "off":
         log(f"未知 PP_PROMO_MODE={promo_mode!r}，已忽略", "[WARN] ")
-    log(f"Checkout promo: mode={promo_mode}, id={promo_id}")
+    if not defer_promo:
+        log(f"Checkout promo: mode={promo_mode}, id={promo_id}")
 
     headers = {
         "Referer": "https://chatgpt.com/",
@@ -1344,7 +1355,8 @@ def create_checkout(chatgpt: requests.Session, country: str) -> dict[str, str]:
 
     data = resp.json() or {}
     if (
-        promo_mode == "coupon"
+        not defer_promo
+        and promo_mode == "coupon"
         and promo_id == "plus-1-month-free"
         and not checkout_response_has_promo(data)
         and env_bool("IDEAL_COUPON_FALLBACK_PROMO_CAMPAIGN", True)
@@ -2580,24 +2592,27 @@ def run_provider_flow(
         if isinstance(payment_method_types, list):
             methods = [str(item).lower() for item in payment_method_types]
             log(f"Stripe 可用支付方式: {methods}")
-            if "ideal" not in methods:
+            if EXPECTED_PAYMENT_METHOD_TYPE not in methods:
                 raise RuntimeError(
                     f"{IDEAL_UNAVAILABLE_ERROR}: {stage} amount={current_amount}; "
                     f"payment_method_types={methods}"
                 )
         return current_ctx, current_amount
 
-    log(
-        f"{IDEAL_BOOTSTRAP_COUNTRY} Bootstrap Stripe init "
-        f"(PM={billing['country']}, proxy={proxy_label(checkout_proxy)})..."
-    )
-    init_payload = stripe_init(checkout["cs_id"], stripe_pk, checkout_proxy)
-    if not checkout.get("processor_entity"):
-        processor_entity = infer_processor_entity(init_payload)
-        if processor_entity:
-            checkout["processor_entity"] = processor_entity
-            log(f"从 Stripe init 推断 processor_entity={processor_entity}")
-    inspect_init(init_payload, f"{IDEAL_BOOTSTRAP_COUNTRY} Bootstrap")
+    if env_bool("IDEAL_SKIP_BOOTSTRAP_INIT", False):
+        log(f"跳过 {IDEAL_BOOTSTRAP_COUNTRY} Bootstrap Init，首次 Init 延后到 checkout/update 之后")
+    else:
+        log(
+            f"{IDEAL_BOOTSTRAP_COUNTRY} Bootstrap Stripe init "
+            f"(PM={billing['country']}, proxy={proxy_label(checkout_proxy)})..."
+        )
+        init_payload = stripe_init(checkout["cs_id"], stripe_pk, checkout_proxy)
+        if not checkout.get("processor_entity"):
+            processor_entity = infer_processor_entity(init_payload)
+            if processor_entity:
+                checkout["processor_entity"] = processor_entity
+                log(f"从 Stripe init 推断 processor_entity={processor_entity}")
+        inspect_init(init_payload, f"{IDEAL_BOOTSTRAP_COUNTRY} Bootstrap")
     if stop_event and stop_event.is_set():
         raise RuntimeError("任务已停止，跳过本轮")
 
@@ -3143,7 +3158,7 @@ def run_single_link_parallel_mode(
                 for pending in futures:
                     pending.cancel()
                 print("\n===== 结果 =====")
-                print(f"iDEAL 最终扫码/授权 URL:\n{redirect_url}")
+                print(f"{RESULT_LABEL}:\n{redirect_url}")
                 return 0
             last_error = error or last_error
             if is_user_already_paid_error(error):

@@ -14,6 +14,9 @@ services:
       - ./nl_proxy_seeds.txt:/app/nl_proxy_seeds.txt
       - ./vn_proxy_seeds.txt:/app/vn_proxy_seeds.txt
       - ./token.txt:/app/token.txt
+      - ./turkey_card/tr_proxy_seeds.txt:/app/turkey_card/tr_proxy_seeds.txt
+      - ./turkey_card/gb_proxy_seeds.txt:/app/turkey_card/gb_proxy_seeds.txt
+      - ./turkey_card/token.txt:/app/turkey_card/token.txt
       - ./pix/br_proxy_seeds.txt:/app/pix/br_proxy_seeds.txt
       - ./pix/vn_proxy_seeds.txt:/app/pix/vn_proxy_seeds.txt
       - ./twint/ch_proxy_seeds.txt:/app/twint/ch_proxy_seeds.txt

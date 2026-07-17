@@ -25,6 +25,11 @@ UI_PATH = ROOT / "ideal_ui.html"
 PROXY_SEED_PATH = ROOT / "proxy_seeds.txt"
 IDEAL_PRIMARY_PROXY_SEED_PATH = ROOT / "nl_proxy_seeds.txt"
 IDEAL_PROMOTION_PROXY_SEED_PATH = ROOT / "vn_proxy_seeds.txt"
+TURKEY_CARD_DIR = ROOT / "turkey_card"
+TURKEY_CARD_SCRIPT_PATH = TURKEY_CARD_DIR / "card_extract.py"
+TURKEY_CARD_TR_PROXY_SEED_PATH = TURKEY_CARD_DIR / "tr_proxy_seeds.txt"
+TURKEY_CARD_GB_PROXY_SEED_PATH = TURKEY_CARD_DIR / "gb_proxy_seeds.txt"
+TURKEY_CARD_TOKEN_PATH = TURKEY_CARD_DIR / "token.txt"
 BLIK_DIR = ROOT / "blik"
 BLIK_SCRIPT_PATH = BLIK_DIR / "blik_qr_extract.py"
 BLIK_PROXY_SEED_PATH = BLIK_DIR / "proxy_seeds.txt"
@@ -70,6 +75,13 @@ PAYMENT_METHODS: dict[str, dict[str, Any]] = {
         "script_path": IDEAL_SCRIPT_PATH,
         "result_marker": "iDEAL 最终扫码/授权 URL:",
     },
+    "turkey_card": {
+        "label": "Turkey Card",
+        "flow": "TR/GB/TR",
+        "available": True,
+        "script_path": TURKEY_CARD_SCRIPT_PATH,
+        "result_marker": "Turkey Card 最终支付 URL:",
+    },
     "pix": {
         "label": "PIX",
         "flow": "BR/BR/BR",
@@ -109,12 +121,13 @@ PAYMENT_METHODS: dict[str, dict[str, Any]] = {
 
 PAYMENT_CHAIN_DEFAULTS: dict[str, tuple[str, str, str]] = {
     "ideal": ("NL", "VN", "NL"),
+    "turkey_card": ("TR", "GB", "TR"),
     "pix": ("BR", "BR", "BR"),
     "kakao_pay": ("KR", "VN", "KR"),
     "twint": ("CH", "VN", "CH"),
     "upi": ("IN", "VN", "IN"),
 }
-MANUAL_PROXY_METHODS = {"ideal", "pix", "kakao_pay", "twint", "upi"}
+MANUAL_PROXY_METHODS = {"ideal", "turkey_card", "pix", "kakao_pay", "twint", "upi"}
 COUNTRY_CODE_RE = re.compile(r"[A-Z]{2}")
 
 
@@ -161,6 +174,8 @@ def payment_storage_paths(payment_method: str) -> tuple[Path, Path]:
         paths = UPI_PRIMARY_PROXY_SEED_PATH, UPI_TOKEN_PATH
     elif payment_method == "ideal":
         paths = IDEAL_PRIMARY_PROXY_SEED_PATH, TOKEN_PATH
+    elif payment_method == "turkey_card":
+        paths = TURKEY_CARD_TR_PROXY_SEED_PATH, TURKEY_CARD_TOKEN_PATH
     else:
         paths = PROXY_SEED_PATH, TOKEN_PATH
     return storage_file_path(paths[0]), storage_file_path(paths[1])
@@ -169,6 +184,8 @@ def payment_storage_paths(payment_method: str) -> tuple[Path, Path]:
 def manual_proxy_paths(payment_method: str) -> tuple[Path, Path] | None:
     if payment_method == "ideal":
         paths = IDEAL_PRIMARY_PROXY_SEED_PATH, IDEAL_PROMOTION_PROXY_SEED_PATH
+    elif payment_method == "turkey_card":
+        paths = TURKEY_CARD_TR_PROXY_SEED_PATH, TURKEY_CARD_GB_PROXY_SEED_PATH
     elif payment_method == "pix":
         paths = PIX_PRIMARY_PROXY_SEED_PATH, PIX_PROMOTION_PROXY_SEED_PATH
     elif payment_method == "kakao_pay":
@@ -261,6 +278,26 @@ def clean_text(payload: dict[str, Any], name: str, default: str = "", limit: int
     if len(value) > limit:
         raise ValueError(f"{name} 内容过长")
     return value
+
+
+def normalize_card_number(value: str) -> str:
+    return re.sub(r"\D+", "", str(value or ""))
+
+
+def card_number_is_valid(value: str) -> bool:
+    number = normalize_card_number(value)
+    if not 12 <= len(number) <= 19:
+        return False
+    total = 0
+    parity = len(number) % 2
+    for index, char in enumerate(number):
+        digit = int(char)
+        if index % 2 == parity:
+            digit *= 2
+            if digit > 9:
+                digit -= 9
+        total += digit
+    return total % 10 == 0
 
 
 def clean_country_code(payload: dict[str, Any], name: str, default: str) -> str:
@@ -403,6 +440,10 @@ def build_environment(
             bootstrap_country = "BR"
             promotion_country = "BR"
             provider_country = "BR"
+        elif payment_method == "turkey_card":
+            bootstrap_country = "TR"
+            promotion_country = "GB"
+            provider_country = "TR"
         else:
             bootstrap_country = clean_country_code(payload, "bootstrap_country", default_chain[0])
             promotion_country = clean_country_code(payload, "promotion_country", default_chain[1])
@@ -428,6 +469,21 @@ def build_environment(
         if not blik_code.isdigit() or len(blik_code) != 6:
             raise ValueError("BLIK Code 必须是6位数字")
 
+    card_number = normalize_card_number(clean_text(payload, "card_number", "", 32))
+    card_exp_month = clean_text(payload, "card_exp_month", "", 2)
+    card_exp_year = clean_text(payload, "card_exp_year", "", 4)
+    card_cvc = re.sub(r"\D+", "", clean_text(payload, "card_cvc", "", 4))
+    card_holder = clean_text(payload, "card_holder", "", 120)
+    if payment_method == "turkey_card":
+        if not card_number_is_valid(card_number):
+            raise ValueError("Turkey Card 卡号无效")
+        if not card_exp_month.isdigit() or not 1 <= int(card_exp_month) <= 12:
+            raise ValueError("Turkey Card 有效期月份无效")
+        if not card_exp_year.isdigit() or len(card_exp_year) not in {2, 4}:
+            raise ValueError("Turkey Card 有效期年份无效")
+        if len(card_cvc) not in {3, 4}:
+            raise ValueError("Turkey Card CVC 无效")
+
     promo_mode = clean_text(payload, "promo_mode", "campaign", 20).lower()
     if promo_mode not in {"coupon", "campaign", "query", "trial", "free_trial", "code", "off"}:
         raise ValueError("优惠模式不正确")
@@ -448,6 +504,20 @@ def build_environment(
         manual_promotion_proxy_file = resolve_proxy_file(
             clean_text(payload, "manual_promotion_proxy_file", clean_text(payload, "kakao_promotion_proxy_file", str(promotion_path))),
             "Kakao VN 代理文件",
+        )
+    elif payment_method == "turkey_card":
+        primary_path, promotion_path = manual_proxy_paths(payment_method) or (
+            TURKEY_CARD_TR_PROXY_SEED_PATH,
+            TURKEY_CARD_GB_PROXY_SEED_PATH,
+        )
+        manual_checkout_proxy_file = resolve_proxy_file(
+            clean_text(payload, "manual_checkout_proxy_file", str(primary_path)),
+            "Turkey Card TR 代理文件",
+        )
+        manual_provider_proxy_file = manual_checkout_proxy_file
+        manual_promotion_proxy_file = resolve_proxy_file(
+            clean_text(payload, "manual_promotion_proxy_file", str(promotion_path)),
+            "Turkey Card GB 代理文件",
         )
     if payment_method in MANUAL_PROXY_METHODS and not manual_checkout_proxy_file:
         primary_path, promotion_path = manual_proxy_paths(payment_method) or (KAKAO_KR_PROXY_SEED_PATH, KAKAO_VN_PROXY_SEED_PATH)
@@ -474,6 +544,15 @@ def build_environment(
         "IDEAL_CHECKOUT_PROXY_FILE",
         "IDEAL_PROMOTION_PROXY_FILE",
         "IDEAL_PROVIDER_PROXY_FILE",
+        "IDEAL_STRIPE_PAYMENT_METHOD",
+        "IDEAL_RESULT_LABEL",
+        "IDEAL_DEFER_PROMO_TO_UPDATE",
+        "IDEAL_SKIP_BOOTSTRAP_INIT",
+        "TURKEY_CARD_NUMBER",
+        "TURKEY_CARD_EXP_MONTH",
+        "TURKEY_CARD_EXP_YEAR",
+        "TURKEY_CARD_CVC",
+        "TURKEY_CARD_HOLDER",
         "PP_CHECKOUT_PROXY_FILE",
         "PP_PROMOTION_PROXY_FILE",
         "PP_PROVIDER_PROXY_FILE",
@@ -646,16 +725,30 @@ def build_environment(
             "IDEAL_APPROVE_WARMUP": "1",
             "IDEAL_SAVED_PAYMENT_VALUE": "never",
             "IDEAL_BROWSER_LOCALE": (
-                "pl-PL" if payment_method == "blik" else "ko-KR" if payment_method == "kakao_pay" else "nl-NL"
+                "pl-PL"
+                if payment_method == "blik"
+                else "ko-KR"
+                if payment_method == "kakao_pay"
+                else "tr-TR"
+                if payment_method == "turkey_card"
+                else "nl-NL"
             ),
             "IDEAL_ELEMENTS_LOCALE": (
-                "pl-PL" if payment_method == "blik" else "ko" if payment_method == "kakao_pay" else "nl"
+                "pl-PL"
+                if payment_method == "blik"
+                else "ko"
+                if payment_method == "kakao_pay"
+                else "tr"
+                if payment_method == "turkey_card"
+                else "nl"
             ),
             "IDEAL_BROWSER_TIMEZONE": (
                 "Europe/Warsaw"
                 if payment_method == "blik"
                 else "Asia/Seoul"
                 if payment_method == "kakao_pay"
+                else "Europe/Istanbul"
+                if payment_method == "turkey_card"
                 else "Europe/Amsterdam"
             ),
             "IDEAL_PROXY_REMOVE_FAILED": "1" if as_bool(payload, "remove_failed", True) else "0",
@@ -667,7 +760,9 @@ def build_environment(
             "IDEAL_BILLING_COUNTRY": payment_method_country,
             "IDEAL_CHECKOUT_PROXY_COUNTRY": checkout_country,
             "IDEAL_PROVIDER_PROXY_COUNTRIES": payment_method_country,
-            "IDEAL_BANK": "" if payment_method in {"blik", "kakao_pay", "pix", "twint", "upi"} else clean_text(payload, "bank", "", 40),
+            "IDEAL_BANK": ""
+            if payment_method in {"blik", "kakao_pay", "pix", "twint", "upi", "turkey_card"}
+            else clean_text(payload, "bank", "", 40),
             "IDEAL_PRE_PROXY": clean_text(payload, "pre_proxy", "", 500),
             "PP_PROMO_MODE": promo_mode,
             "PP_PROMO_ID": promo_id,
@@ -685,7 +780,7 @@ def build_environment(
                 "IDEAL_PROXY_TARGET_USE_PRE_PROXY": "1",
             }
         )
-    elif payment_method == "ideal":
+    elif payment_method in {"ideal", "turkey_card"}:
         env.update(
             {
                 "IDEAL_CHECKOUT_PROXY_FILE": manual_checkout_proxy_file,
@@ -693,6 +788,20 @@ def build_environment(
                 "IDEAL_PROVIDER_PROXY_FILE": manual_provider_proxy_file,
             }
         )
+        if payment_method == "turkey_card":
+            env.update(
+                {
+                    "IDEAL_STRIPE_PAYMENT_METHOD": "card",
+                    "IDEAL_RESULT_LABEL": "Turkey Card 最终支付 URL",
+                    "IDEAL_DEFER_PROMO_TO_UPDATE": "1",
+                    "IDEAL_SKIP_BOOTSTRAP_INIT": "1",
+                    "TURKEY_CARD_NUMBER": card_number,
+                    "TURKEY_CARD_EXP_MONTH": card_exp_month,
+                    "TURKEY_CARD_EXP_YEAR": card_exp_year,
+                    "TURKEY_CARD_CVC": card_cvc,
+                    "TURKEY_CARD_HOLDER": card_holder,
+                }
+            )
         env.pop("IDEAL_BLIK_CODE", None)
     elif payment_method == "kakao_pay":
         env.update(

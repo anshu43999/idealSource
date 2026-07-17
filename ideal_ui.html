@@ -779,6 +779,26 @@
                 <label for="blikCode">BLIK Code</label>
                 <input id="blikCode" name="blik_code" type="text" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="请输入6位BLIK Code" autocomplete="one-time-code">
               </div>
+              <div class="field full turkey-card-field" hidden>
+                <label for="cardNumber">卡号</label>
+                <input id="cardNumber" name="card_number" type="text" inputmode="numeric" maxlength="23" pattern="[0-9 -]{12,23}" placeholder="输入 Turkey Card 卡号" autocomplete="cc-number" data-card-required>
+              </div>
+              <div class="field turkey-card-field" hidden>
+                <label for="cardHolder">持卡人姓名</label>
+                <input id="cardHolder" name="card_holder" type="text" maxlength="120" placeholder="留空使用土耳其账单姓名" autocomplete="cc-name">
+              </div>
+              <div class="field turkey-card-field" hidden>
+                <label for="cardCvc">CVC</label>
+                <input id="cardCvc" name="card_cvc" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{3,4}" placeholder="3 或 4 位" autocomplete="cc-csc" data-card-required>
+              </div>
+              <div class="field turkey-card-field" hidden>
+                <label for="cardExpMonth">有效期月份</label>
+                <input id="cardExpMonth" name="card_exp_month" type="number" min="1" max="12" placeholder="MM" autocomplete="cc-exp-month" data-card-required>
+              </div>
+              <div class="field turkey-card-field" hidden>
+                <label for="cardExpYear">有效期年份</label>
+                <input id="cardExpYear" name="card_exp_year" type="number" min="2026" max="2099" placeholder="YYYY" autocomplete="cc-exp-year" data-card-required>
+              </div>
               <div class="field">
                 <label for="promoMode">优惠模式</label>
                 <select id="promoMode" name="promo_mode">
@@ -864,7 +884,7 @@
   <div class="toast" id="toast" role="status"></div>
 
   <script>
-    const CONFIG_VERSION = '2026-07-14-pix-br-seven-step';
+    const CONFIG_VERSION = '2026-07-17-turkey-card';
     const form = document.getElementById('configForm');
     const startButton = document.getElementById('startButton');
     const stopButton = document.getElementById('stopButton');
@@ -895,6 +915,7 @@
     const blikCodeField = document.getElementById('blikCodeField');
     const blikCodeInput = document.getElementById('blikCode');
     const bankField = document.getElementById('bankField');
+    const turkeyCardFields = [...document.querySelectorAll('.turkey-card-field')];
     const preProxyField = document.getElementById('preProxyField');
     const countryChainField = document.getElementById('countryChainField');
     const bootstrapCountryInput = document.getElementById('bootstrapCountry');
@@ -902,18 +923,21 @@
     const providerCountryInput = document.getElementById('providerCountry');
     const COUNTRY_CHAIN_DEFAULTS = {
       ideal: { bootstrap: 'NL', promotion: 'VN', provider: 'NL' },
+      turkey_card: { bootstrap: 'TR', promotion: 'GB', provider: 'TR' },
       pix: { bootstrap: 'BR', promotion: 'BR', provider: 'BR' },
       kakao_pay: { bootstrap: 'KR', promotion: 'VN', provider: 'KR' },
       twint: { bootstrap: 'CH', promotion: 'VN', provider: 'CH' },
       upi: { bootstrap: 'IN', promotion: 'VN', provider: 'IN' },
     };
-    const MANUAL_PROXY_METHODS = new Set(['ideal', 'pix', 'kakao_pay', 'twint', 'upi']);
+    const MANUAL_PROXY_METHODS = new Set(['ideal', 'turkey_card', 'pix', 'kakao_pay', 'twint', 'upi']);
     const COUNTRY_NAMES = {
       BR: 'Brazil',
       CH: 'Switzerland',
       IN: 'India',
       KR: 'South Korea',
       NL: 'Netherlands',
+      GB: 'United Kingdom',
+      TR: 'Turkey',
       VN: 'Vietnam',
     };
     const RESULT_TTL_SECONDS = {
@@ -1042,6 +1066,7 @@
       if (method?.label) return method.label;
       return {
         ideal: 'iDEAL',
+        turkey_card: 'Turkey Card',
         pix: 'PIX',
         kakao_pay: 'Kakao Pay',
         blik: 'BLIK',
@@ -1081,6 +1106,7 @@
       const isPix = paymentMethodInput.value === 'pix';
       const isTwint = paymentMethodInput.value === 'twint';
       const isUpi = paymentMethodInput.value === 'upi';
+      const isTurkeyCard = paymentMethodInput.value === 'turkey_card';
       const isManualProxyMethod = MANUAL_PROXY_METHODS.has(paymentMethodInput.value);
       const chain = countryChainForMethod();
       const isConfigurableChain = Boolean(chain);
@@ -1089,15 +1115,21 @@
       const paymentStageLabel = isKakao ? 'Kakao' : paymentLabel;
       updateResultCopy();
       blikCodeField.hidden = !isBLIK;
-      bankField.hidden = isBLIK || isKakao || isPix || isTwint || isUpi;
+      bankField.hidden = isBLIK || isKakao || isPix || isTwint || isUpi || isTurkeyCard;
+      for (const field of turkeyCardFields) {
+        field.hidden = !isTurkeyCard;
+        const input = field.querySelector('input');
+        input.disabled = !isTurkeyCard;
+        input.required = isTurkeyCard && input.hasAttribute('data-card-required');
+      }
       proxySeedsField.hidden = isManualProxyMethod;
       kakaoKrProxyField.hidden = !isManualProxyMethod;
       kakaoVnProxyField.hidden = !isManualProxyMethod;
       countryChainField.hidden = !isConfigurableChain;
       for (const input of [bootstrapCountryInput, promotionCountryInput, providerCountryInput]) {
-        input.disabled = !isConfigurableChain || isPix;
+        input.disabled = !isConfigurableChain || isPix || isTurkeyCard;
       }
-      if (isPix) {
+      if (isPix || isTurkeyCard) {
         bootstrapCountryInput.value = chain.bootstrap;
         promotionCountryInput.value = chain.promotion;
         providerCountryInput.value = chain.provider;
@@ -1111,6 +1143,8 @@
         document.getElementById('countryChainHint').textContent =
           isPix
             ? 'PIX 固定七步 BR 链路：主 BR 创建 checkout 并首次 init 校验 PIX；第二组 BR 应用优惠和同步税务；返回主 BR 校验 0 元后创建 PIX，最后 confirm、approve、poll。'
+            : isTurkeyCard
+            ? 'Turkey Card 固定链路：TR 创建 Checkout，GB 执行 checkout/update，TR 创建 Card PM、confirm、approve 并轮询结果。'
             : `${paymentLabel}：第一段用于 Checkout 与首次 Stripe init，第二段用于 checkout/update，第三段用于 Stripe refresh、税务、PM、confirm 与 approve。`;
       }
       document.getElementById('batchSizeLabel').textContent = isKakao
@@ -1198,6 +1232,8 @@
         ? 'TWINT 与优惠设置'
         : isUpi
         ? 'UPI 与优惠设置'
+        : isTurkeyCard
+        ? 'Turkey Card 与优惠设置'
         : '优惠与银行';
       if (isBLIK) resultBox.hidden = true;
       if (isConfigurableChain) {
@@ -1317,7 +1353,7 @@
       if (text.includes('[ERROR]') || text.includes('Traceback') || text.includes('启动失败')) return 'error';
       if (text.includes('[WARN]') || text.includes('失败')) return 'warn';
       if (text.includes('[UI]')) return 'ui';
-      if (text.includes('iDEAL 最终扫码/授权 URL:') || text.includes('PIX 最终支付 URL:') || text.includes('TWINT 最终支付 URL:') || text.includes('UPI 最终支付 URL:') || text.includes('BLIK 自动提交完成') || text.includes('Kakao/Nicepay 最终跳转 URL:') || text.trim().startsWith('http://') || text.trim().startsWith('https://')) return 'success';
+      if (text.includes('iDEAL 最终扫码/授权 URL:') || text.includes('Turkey Card 最终支付 URL:') || text.includes('PIX 最终支付 URL:') || text.includes('TWINT 最终支付 URL:') || text.includes('UPI 最终支付 URL:') || text.includes('BLIK 自动提交完成') || text.includes('Kakao/Nicepay 最终跳转 URL:') || text.trim().startsWith('http://') || text.trim().startsWith('https://')) return 'success';
       return '';
     }
 
@@ -1441,6 +1477,11 @@
       delete safe.token;
       delete safe.session_token;
       delete safe.blik_code;
+      delete safe.card_number;
+      delete safe.card_exp_month;
+      delete safe.card_exp_year;
+      delete safe.card_cvc;
+      delete safe.card_holder;
       delete safe.proxy_seeds;
       delete safe.manual_primary_proxies;
       delete safe.manual_promotion_proxies;
@@ -1459,7 +1500,7 @@
           return;
         }
         let removedSensitiveConfig = false;
-        for (const name of ['proxy_seeds', 'manual_primary_proxies', 'manual_promotion_proxies', 'kakao_kr_proxies', 'kakao_vn_proxies', 'pre_proxy', 'token', 'session_token', 'blik_code']) {
+        for (const name of ['proxy_seeds', 'manual_primary_proxies', 'manual_promotion_proxies', 'kakao_kr_proxies', 'kakao_vn_proxies', 'pre_proxy', 'token', 'session_token', 'blik_code', 'card_number', 'card_exp_month', 'card_exp_year', 'card_cvc', 'card_holder']) {
           if (!Object.hasOwn(saved, name)) continue;
           delete saved[name];
           removedSensitiveConfig = true;
