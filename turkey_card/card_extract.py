@@ -115,9 +115,38 @@ def update_turkey_checkout_promotion(
         payload = {}
     if isinstance(payload, dict) and payload.get("success") is False:
         raise RuntimeError(f"TR checkout/update rejected: {str(payload)[:500]}")
+    new_cs_id = ""
+    if isinstance(payload, dict):
+        for key in ("checkout_session_id", "session_id", "id"):
+            value = str(payload.get(key) or "")
+            if value.startswith("cs_"):
+                new_cs_id = value
+                break
+        if not new_cs_id:
+            value = str(flow.first_value_by_key(payload, "checkout_session_id") or "")
+            if value.startswith("cs_"):
+                new_cs_id = value
+        raw_pk = (
+            payload.get("stripe_publishable_key")
+            or payload.get("publishable_key")
+            or payload.get("publishableKey")
+            or payload.get("stripePublishableKey")
+            or payload.get("key")
+            or ""
+        )
+        if raw_pk:
+            checkout["stripe_pk"] = str(raw_pk)
+        processor = payload.get("processor_entity") or payload.get("processorEntity")
+        if processor:
+            checkout["processor_entity"] = str(processor)
+    if new_cs_id and new_cs_id != checkout["cs_id"]:
+        flow.log(f"TR checkout/update 返回新 checkout_session_id，切换 session: {new_cs_id}")
+        checkout["cs_id"] = new_cs_id
+    keys = ",".join(sorted(payload.keys())[:12]) if isinstance(payload, dict) else type(payload).__name__
     flow.log(
         f"TR checkout/update 成功: billing=TR/{flow.currency_for_country('TR')}, "
-        f"promo={promo_id if 'promo_campaign' in body else 'off'}"
+        f"promo={promo_id if 'promo_campaign' in body else 'off'}, "
+        f"new_cs={'yes' if new_cs_id else 'none'}, update_keys={keys or 'none'}"
     )
 
 

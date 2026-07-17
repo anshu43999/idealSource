@@ -193,3 +193,29 @@ def test_turkey_checkout_update_uses_tr_billing_details():
         "promo_campaign_id": "plus-1-month-free",
         "is_coupon_from_query_param": False,
     }
+
+
+def test_turkey_checkout_update_switches_returned_session():
+    class UpdateSession(FakeChatgptSession):
+        def post(self, url, json=None, headers=None, timeout=None):
+            self.body = dict(json or {})
+            return SimpleNamespace(
+                status_code=200,
+                text='{"checkout_session_id":"cs_test_tr_zero"}',
+                url=url,
+                headers={},
+                json=lambda: {
+                    "checkout_session_id": "cs_test_tr_zero",
+                    "publishable_key": "pk_test_tr",
+                    "processor_entity": "openai_ie",
+                },
+            )
+
+    session = UpdateSession()
+    checkout_data = checkout()
+
+    card.update_turkey_checkout_promotion(session, checkout_data)
+
+    assert checkout_data["cs_id"] == "cs_test_tr_zero"
+    assert checkout_data["stripe_pk"] == "pk_test_tr"
+    assert checkout_data["processor_entity"] == "openai_ie"
