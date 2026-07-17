@@ -21,7 +21,7 @@ os.environ.setdefault("IDEAL_CHECKOUT_COUNTRY", "GB")
 os.environ.setdefault("IDEAL_BILLING_COUNTRY", "TR")
 os.environ.setdefault("IDEAL_STRIPE_PAYMENT_METHOD", "card")
 os.environ.setdefault("IDEAL_RESULT_LABEL", "Turkey Card 最终支付 URL")
-os.environ.setdefault("IDEAL_DEFER_PROMO_TO_UPDATE", "1")
+os.environ.setdefault("IDEAL_DEFER_PROMO_TO_UPDATE", "0")
 os.environ.setdefault("IDEAL_SKIP_BOOTSTRAP_INIT", "1")
 os.environ.setdefault("IDEAL_CHECKOUT_PROXY_FILE", str(SCRIPT_DIR / "gb_proxy_seeds.txt"))
 os.environ.setdefault("IDEAL_PROMOTION_PROXY_FILE", str(SCRIPT_DIR / "tr_proxy_seeds.txt"))
@@ -220,6 +220,28 @@ def inspect_card_init(
     return flow.build_ctx(init_payload, checkout), amount
 
 
+def activate_turkey_checkout(checkout: dict[str, str], checkout_proxy: str) -> None:
+    session = flow.new_session(checkout_proxy)
+    session.headers.update(
+        {
+            "User-Agent": flow.random_user_agent(),
+            "Accept-Language": flow.payment_accept_language(),
+        }
+    )
+    urls = [
+        flow.checkout_page_url(checkout),
+        f"https://pay.openai.com/c/pay/{checkout['cs_id']}",
+        f"https://checkout.stripe.com/c/pay/{checkout['cs_id']}",
+    ]
+    for index, url in enumerate(urls, start=1):
+        try:
+            resp = session.get(url, timeout=flow.DEFAULT_TIMEOUT, allow_redirects=True)
+            flow.dump_http(resp, f"turkey_activate_checkout_{index}", None, "GET", url, force=resp.status_code >= 400)
+        except Exception as exc:
+            flow.log(f"GB checkout 页面激活异常: {exc}", "[WARN] ")
+    flow.log("GB checkout 页面已按 Kakao 链路预热")
+
+
 def run_manual_card_flow(
     access_token: str,
     session_token: str,
@@ -235,6 +257,17 @@ def run_manual_card_flow(
     """Create from GB, convert through TR update, then return the hosted form."""
     del approve_pool, billing
     tr_billing = turkey_billing_profile()
+    if stop_event and stop_event.is_set():
+        raise RuntimeError("任务已停止，跳过本轮")
+
+    flow.log(f"GB Bootstrap Stripe Init: proxy={flow.proxy_label(checkout_proxy)}")
+    activate_turkey_checkout(checkout, checkout_proxy)
+    stripe_pk = checkout.get("stripe_pk") or flow.DEFAULT_STRIPE_PK
+    bootstrap_payload = flow.stripe_init(checkout["cs_id"], stripe_pk, checkout_proxy)
+    _bootstrap_ctx, _bootstrap_amount = inspect_card_init(
+        checkout, bootstrap_payload, "GB Bootstrap"
+    )
+
     if stop_event and stop_event.is_set():
         raise RuntimeError("任务已停止，跳过本轮")
 
@@ -260,7 +293,6 @@ def run_manual_card_flow(
         "TR checkout/update 后通过 TR Stripe Init 校验 Card 与 0 元金额: "
         f"proxy={flow.proxy_label(provider_proxy)}"
     )
-    stripe_pk = checkout.get("stripe_pk") or flow.DEFAULT_STRIPE_PK
     init_payload = flow.stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
     ctx, amount = inspect_card_init(checkout, init_payload, "TR checkout/taxes 后")
     flow.log("提交 TR Stripe tax_region 并重新刷新 Stripe Init...")

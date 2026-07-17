@@ -41,6 +41,11 @@ def checkout() -> dict[str, str]:
 
 def run_flow(monkeypatch, methods: list[str], events: list[str]) -> str:
     monkeypatch.setattr(
+        card,
+        "activate_turkey_checkout",
+        lambda *args, **kwargs: events.append("activate"),
+    )
+    monkeypatch.setattr(
         card.flow,
         "build_chatgpt_session",
         lambda *args, **kwargs: object(),
@@ -99,8 +104,8 @@ def test_turkey_card_country_chain():
     assert card.flow.COUNTRY_CURRENCY["GB"] == "GBP"
 
 
-def test_turkey_checkout_defers_promotion(monkeypatch):
-    monkeypatch.setenv("IDEAL_DEFER_PROMO_TO_UPDATE", "1")
+def test_turkey_checkout_creates_with_promotion(monkeypatch):
+    monkeypatch.setenv("IDEAL_DEFER_PROMO_TO_UPDATE", "0")
     chatgpt = FakeChatgptSession()
 
     created = card.flow.create_checkout(chatgpt, "GB")
@@ -108,7 +113,7 @@ def test_turkey_checkout_defers_promotion(monkeypatch):
     assert created["billing_country"] == "GB"
     assert created["currency"] == "GBP"
     assert chatgpt.body["billing_details"] == {"country": "GB", "currency": "GBP"}
-    assert "promo_campaign" not in chatgpt.body
+    assert chatgpt.body["promo_campaign"]["promo_campaign_id"] == "plus-1-month-free"
     assert "coupon" not in chatgpt.body
 
 
@@ -117,7 +122,7 @@ def test_manual_card_flow_updates_then_initializes(monkeypatch):
 
     result = run_flow(monkeypatch, ["card", "link"], events)
 
-    assert events == ["update", "taxes", "init", "tax_region", "init"]
+    assert events == ["activate", "init", "update", "taxes", "init", "tax_region", "init"]
     assert result == "https://pay.openai.com/c/pay/cs_test_card?test=1"
 
 
@@ -134,6 +139,7 @@ def test_manual_card_flow_rejects_missing_card(monkeypatch):
 
 def test_manual_card_flow_falls_back_to_checkout_page(monkeypatch):
     monkeypatch.setattr(card.flow, "build_chatgpt_session", lambda *args: object())
+    monkeypatch.setattr(card, "activate_turkey_checkout", lambda *args: None)
     monkeypatch.setattr(card, "update_turkey_checkout_promotion", lambda *args: None)
     monkeypatch.setattr(card, "update_turkey_checkout_taxes", lambda *args: None)
     monkeypatch.setattr(

@@ -107,7 +107,7 @@ class StoragePathTests(unittest.TestCase):
         self.assertEqual(env["IDEAL_PROMOTION_PROXY_FILE"], str(ideal_ui.TURKEY_CARD_TR_PROXY_SEED_PATH))
         self.assertEqual(env["IDEAL_PROVIDER_PROXY_FILE"], str(ideal_ui.TURKEY_CARD_TR_PROXY_SEED_PATH))
         self.assertEqual(env["IDEAL_STRIPE_PAYMENT_METHOD"], "card")
-        self.assertEqual(env["IDEAL_DEFER_PROMO_TO_UPDATE"], "1")
+        self.assertEqual(env["IDEAL_DEFER_PROMO_TO_UPDATE"], "0")
         self.assertEqual(env["IDEAL_SKIP_BOOTSTRAP_INIT"], "1")
         self.assertFalse(any(name.startswith("TURKEY_CARD_") for name in env))
 
