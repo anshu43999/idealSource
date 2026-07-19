@@ -21,7 +21,8 @@ os.environ.setdefault("IDEAL_CHECKOUT_COUNTRY", "US")
 os.environ.setdefault("IDEAL_BILLING_COUNTRY", "TR")
 os.environ.setdefault("IDEAL_STRIPE_PAYMENT_METHOD", "card")
 os.environ.setdefault("IDEAL_RESULT_LABEL", "Turkey Card 最终支付 URL")
-os.environ["PP_PROMO_MODE"] = "off"
+os.environ["PP_PROMO_MODE"] = "trial"
+os.environ.setdefault("PP_TRIAL_DAYS", "30")
 os.environ.setdefault("IDEAL_DEFER_PROMO_TO_UPDATE", "0")
 os.environ.setdefault("IDEAL_SKIP_BOOTSTRAP_INIT", "1")
 os.environ.setdefault("IDEAL_CHECKOUT_PROXY_FILE", str(SCRIPT_DIR / "us_proxy_seeds.txt"))

@@ -112,8 +112,9 @@ def test_turkey_card_country_chain():
     assert card.flow.COUNTRY_CURRENCY["US"] == "USD"
 
 
-def test_turkey_checkout_creates_without_invalid_promotion(monkeypatch):
-    monkeypatch.setenv("PP_PROMO_MODE", "off")
+def test_turkey_checkout_creates_with_trial_without_invalid_promotion(monkeypatch):
+    monkeypatch.setenv("PP_PROMO_MODE", "trial")
+    monkeypatch.setenv("PP_TRIAL_DAYS", "30")
     monkeypatch.setenv("IDEAL_DEFER_PROMO_TO_UPDATE", "0")
     chatgpt = FakeChatgptSession()
 
@@ -125,6 +126,7 @@ def test_turkey_checkout_creates_without_invalid_promotion(monkeypatch):
     assert created["checkout_page_processor"] == "openai_llc"
     assert card.flow.checkout_page_url(created) == "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
     assert chatgpt.body["billing_details"] == {"country": "US", "currency": "USD"}
+    assert chatgpt.body["subscription_data"] == {"trial_period_days": 30}
     assert "promo_campaign" not in chatgpt.body
     assert "coupon" not in chatgpt.body
 
@@ -215,7 +217,7 @@ def test_turkey_checkout_taxes_uses_tr_currency():
 
 
 def test_turkey_checkout_update_uses_tr_billing_details(monkeypatch):
-    monkeypatch.setenv("PP_PROMO_MODE", "off")
+    monkeypatch.setenv("PP_PROMO_MODE", "trial")
     session = FakeChatgptSession()
 
     card.update_turkey_checkout_promotion(session, checkout())
@@ -225,11 +227,12 @@ def test_turkey_checkout_update_uses_tr_billing_details(monkeypatch):
         "country": "TR",
         "currency": "USD",
     }
+    assert "subscription_data" not in session.body
     assert "promo_campaign" not in session.body
 
 
 def test_turkey_checkout_update_switches_returned_session(monkeypatch):
-    monkeypatch.setenv("PP_PROMO_MODE", "off")
+    monkeypatch.setenv("PP_PROMO_MODE", "trial")
 
     class UpdateSession(FakeChatgptSession):
         def post(self, url, json=None, headers=None, timeout=None):
