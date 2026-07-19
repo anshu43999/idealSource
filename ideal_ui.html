@@ -902,7 +902,7 @@
     const providerCountryInput = document.getElementById('providerCountry');
     const COUNTRY_CHAIN_DEFAULTS = {
       ideal: { bootstrap: 'NL', promotion: 'VN', provider: 'NL' },
-      turkey_card: { bootstrap: 'GB', promotion: 'TR', provider: 'TR' },
+      turkey_card: { bootstrap: 'US', promotion: 'TR', provider: 'TR' },
       pix: { bootstrap: 'BR', promotion: 'BR', provider: 'BR' },
       kakao_pay: { bootstrap: 'KR', promotion: 'VN', provider: 'KR' },
       twint: { bootstrap: 'CH', promotion: 'VN', provider: 'CH' },
@@ -916,6 +916,7 @@
       KR: 'South Korea',
       NL: 'Netherlands',
       GB: 'United Kingdom',
+      US: 'United States',
       TR: 'Turkey',
       VN: 'Vietnam',
     };
@@ -1117,7 +1118,7 @@
           isPix
             ? 'PIX 固定七步 BR 链路：主 BR 创建 checkout 并首次 init 校验 PIX；第二组 BR 应用优惠和同步税务；返回主 BR 校验 0 元后创建 PIX，最后 confirm、approve、poll。'
             : isTurkeyCard
-            ? 'Turkey Card 固定链路：GB 创建非 0 Checkout，TR 执行 checkout/update 并通过 TR Stripe Init 校验 0 元 Card 页面。'
+            ? 'Turkey Card 固定链路：US 创建非 0 Checkout，TR 执行 checkout/update 并通过 TR Stripe Init 校验 0 元 Card 页面。'
             : `${paymentLabel}：第一段用于 Checkout 与首次 Stripe init，第二段用于 checkout/update，第三段用于 Stripe refresh、税务、PM、confirm 与 approve。`;
       }
       document.getElementById('batchSizeLabel').textContent = isKakao
@@ -1156,7 +1157,7 @@
       document.getElementById('proxyChainValue').textContent = isBLIK
         ? 'PL → PL Stripe/BLIK → PL approve'
         : isTurkeyCard
-        ? 'GB checkout → TR update → TR Stripe Init/Card 页面'
+        ? 'US checkout → TR update → TR Stripe Init/Card 页面'
         : `${chain.bootstrap} checkout → ${chain.promotion} update → ${chain.provider} Stripe/${paymentStageLabel}/approve`;
       document.getElementById('proxyChainHint').textContent = isBLIK
         ? '三个阶段复用同一 sticky session'
@@ -1180,7 +1181,7 @@
         document.querySelector('label[for="kakaoVnProxies"]').textContent = `${chain.promotion} 代理`;
         if (isTurkeyCard) {
           document.getElementById('kakaoKrProxyHint').textContent =
-            '用于 GB 非 0 checkout 创建。';
+            '用于 US 非 0 checkout 创建。';
           document.getElementById('kakaoVnProxyHint').textContent =
             '用于 TR checkout/update 与最终 Stripe Init/Card 0 元校验；卡片信息在最终支付页面手动填写。';
         } else if (isPix) {

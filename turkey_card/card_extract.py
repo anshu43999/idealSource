@@ -1,4 +1,4 @@
-"""Turkey Card flow: GB checkout -> TR update -> TR manual card page."""
+"""Turkey Card flow: US checkout -> TR update -> TR manual card page."""
 
 from __future__ import annotations
 
@@ -14,16 +14,16 @@ ROOT = SCRIPT_DIR.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-os.environ.setdefault("IDEAL_BOOTSTRAP_COUNTRY", "GB")
+os.environ.setdefault("IDEAL_BOOTSTRAP_COUNTRY", "US")
 os.environ.setdefault("IDEAL_PROMOTION_COUNTRY", "TR")
 os.environ.setdefault("IDEAL_PROVIDER_COUNTRY", "TR")
-os.environ.setdefault("IDEAL_CHECKOUT_COUNTRY", "GB")
+os.environ.setdefault("IDEAL_CHECKOUT_COUNTRY", "US")
 os.environ.setdefault("IDEAL_BILLING_COUNTRY", "TR")
 os.environ.setdefault("IDEAL_STRIPE_PAYMENT_METHOD", "card")
 os.environ.setdefault("IDEAL_RESULT_LABEL", "Turkey Card 最终支付 URL")
 os.environ.setdefault("IDEAL_DEFER_PROMO_TO_UPDATE", "0")
 os.environ.setdefault("IDEAL_SKIP_BOOTSTRAP_INIT", "1")
-os.environ.setdefault("IDEAL_CHECKOUT_PROXY_FILE", str(SCRIPT_DIR / "gb_proxy_seeds.txt"))
+os.environ.setdefault("IDEAL_CHECKOUT_PROXY_FILE", str(SCRIPT_DIR / "us_proxy_seeds.txt"))
 os.environ.setdefault("IDEAL_PROMOTION_PROXY_FILE", str(SCRIPT_DIR / "tr_proxy_seeds.txt"))
 os.environ.setdefault("IDEAL_PROVIDER_PROXY_FILE", str(SCRIPT_DIR / "tr_proxy_seeds.txt"))
 
@@ -238,8 +238,8 @@ def activate_turkey_checkout(checkout: dict[str, str], checkout_proxy: str) -> N
             resp = session.get(url, timeout=flow.DEFAULT_TIMEOUT, allow_redirects=True)
             flow.dump_http(resp, f"turkey_activate_checkout_{index}", None, "GET", url, force=resp.status_code >= 400)
         except Exception as exc:
-            flow.log(f"GB checkout 页面激活异常: {exc}", "[WARN] ")
-    flow.log("GB checkout 页面已按 Kakao 链路预热")
+            flow.log(f"US checkout 页面激活异常: {exc}", "[WARN] ")
+    flow.log("US checkout 页面已按 Kakao 链路预热")
 
 
 def run_manual_card_flow(
@@ -254,7 +254,7 @@ def run_manual_card_flow(
     billing: dict[str, str],
     stop_event: Any = None,
 ) -> tuple[str, list[str]]:
-    """Create from GB, convert through TR update, then return the hosted form."""
+    """Create from US, convert through TR update, then return the hosted form."""
     del approve_pool, billing
     tr_billing = turkey_billing_profile()
     stripe_pk = checkout.get("stripe_pk") or flow.DEFAULT_STRIPE_PK
@@ -271,15 +271,15 @@ def run_manual_card_flow(
     if stop_event and stop_event.is_set():
         raise RuntimeError("任务已停止，跳过本轮")
 
-    flow.log(f"GB Bootstrap Stripe Init: proxy={flow.proxy_label(checkout_proxy)}")
+    flow.log(f"US Bootstrap Stripe Init: proxy={flow.proxy_label(checkout_proxy)}")
     activate_turkey_checkout(checkout, checkout_proxy)
     bootstrap_payload = flow.stripe_init(checkout["cs_id"], stripe_pk, checkout_proxy)
     _bootstrap_ctx, bootstrap_amount = inspect_card_init(
-        checkout, bootstrap_payload, "GB Bootstrap"
+        checkout, bootstrap_payload, "US Bootstrap"
     )
     if bootstrap_amount == 0:
         flow.log(
-            "GB Bootstrap 已经是 0 元；跳过会重算价格的 TR checkout/update，"
+            "US Bootstrap 已经是 0 元；跳过会重算价格的 TR checkout/update，"
             "改为直接用 TR Provider 刷新并输出手动 Card 页面"
         )
         tr_payload = flow.stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
@@ -354,8 +354,8 @@ def configure_flow() -> None:
     flow._log_file = flow.LOG_DIR / f"turkey_card_{time.strftime('%Y%m%d-%H%M%S')}.log"
     # ChatGPT checkout accepts TR as a billing country, but TRY is not in its
     # checkout currency enum. TR is only used for update/final Stripe Init.
-    flow.COUNTRY_CURRENCY.update({"TR": "USD", "GB": "GBP"})
-    flow.IDEAL_BOOTSTRAP_COUNTRY = "GB"
+    flow.COUNTRY_CURRENCY.update({"TR": "USD", "US": "USD"})
+    flow.IDEAL_BOOTSTRAP_COUNTRY = "US"
     flow.IDEAL_PROMOTION_COUNTRY = "TR"
     flow.IDEAL_PROVIDER_COUNTRY = "TR"
     flow.EXPECTED_PAYMENT_METHOD_TYPE = "card"
