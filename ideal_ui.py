@@ -753,6 +753,7 @@ def build_environment(
                 {
                     "IDEAL_STRIPE_PAYMENT_METHOD": "card",
                     "IDEAL_RESULT_LABEL": "Turkey Card 最终支付 URL",
+                    "PP_PROMO_MODE": "off",
                     "IDEAL_DEFER_PROMO_TO_UPDATE": "0",
                     "IDEAL_SKIP_BOOTSTRAP_INIT": "1",
                 }
@@ -959,7 +960,7 @@ def build_environment(
         "payment_method_country": payment_method_country,
         "proxy_default_scheme": proxy_default_scheme,
         "bank": env["IDEAL_BANK"],
-        "promo_mode": promo_mode,
+        "promo_mode": env["PP_PROMO_MODE"],
         "promo_id": env["PP_PROMO_ID"],
         "remove_failed": env["IDEAL_PROXY_REMOVE_FAILED"] == "1",
         "pre_proxy": env["IDEAL_PRE_PROXY"],
