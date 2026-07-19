@@ -21,8 +21,7 @@ os.environ.setdefault("IDEAL_CHECKOUT_COUNTRY", "US")
 os.environ.setdefault("IDEAL_BILLING_COUNTRY", "TR")
 os.environ.setdefault("IDEAL_STRIPE_PAYMENT_METHOD", "card")
 os.environ.setdefault("IDEAL_RESULT_LABEL", "Turkey Card 最终支付 URL")
-os.environ["PP_PROMO_MODE"] = "trial"
-os.environ.setdefault("PP_TRIAL_DAYS", "30")
+os.environ["PP_PROMO_MODE"] = "query"
 os.environ.setdefault("IDEAL_DEFER_PROMO_TO_UPDATE", "0")
 os.environ.setdefault("IDEAL_SKIP_BOOTSTRAP_INIT", "1")
 os.environ.setdefault("IDEAL_CHECKOUT_PROXY_FILE", str(SCRIPT_DIR / "us_proxy_seeds.txt"))
@@ -263,7 +262,13 @@ def run_manual_card_flow(
     stripe_pk = checkout.get("stripe_pk") or flow.DEFAULT_STRIPE_PK
 
     def manual_card_url(payload: dict[str, Any]) -> str:
-        return flow.checkout_page_url(checkout)
+        url = flow.checkout_page_url(checkout)
+        mode = os.environ.get("PP_PROMO_MODE", "").strip().lower()
+        promo_id = os.environ.get("PP_PROMO_ID", "plus-1-month-free").strip()
+        if mode == "query" and promo_id and "promo=" not in url:
+            separator = "&" if "?" in url else "?"
+            return f"{url}{separator}promo={promo_id}"
+        return url
 
     if stop_event and stop_event.is_set():
         raise RuntimeError("任务已停止，跳过本轮")

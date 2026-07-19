@@ -112,9 +112,8 @@ def test_turkey_card_country_chain():
     assert card.flow.COUNTRY_CURRENCY["US"] == "USD"
 
 
-def test_turkey_checkout_creates_with_trial_without_invalid_promotion(monkeypatch):
-    monkeypatch.setenv("PP_PROMO_MODE", "trial")
-    monkeypatch.setenv("PP_TRIAL_DAYS", "30")
+def test_turkey_checkout_creates_with_query_promotion(monkeypatch):
+    monkeypatch.setenv("PP_PROMO_MODE", "query")
     monkeypatch.setenv("IDEAL_DEFER_PROMO_TO_UPDATE", "0")
     chatgpt = FakeChatgptSession()
 
@@ -126,8 +125,10 @@ def test_turkey_checkout_creates_with_trial_without_invalid_promotion(monkeypatc
     assert created["checkout_page_processor"] == "openai_llc"
     assert card.flow.checkout_page_url(created) == "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
     assert chatgpt.body["billing_details"] == {"country": "US", "currency": "USD"}
-    assert chatgpt.body["subscription_data"] == {"trial_period_days": 30}
-    assert "promo_campaign" not in chatgpt.body
+    assert chatgpt.body["promo_campaign"] == {
+        "promo_campaign_id": "plus-1-month-free",
+        "is_coupon_from_query_param": True,
+    }
     assert "coupon" not in chatgpt.body
 
 
@@ -154,13 +155,13 @@ def test_manual_card_flow_updates_then_initializes(monkeypatch):
     result = run_flow(monkeypatch, ["card", "link"], events)
 
     assert events == ["activate", "init", "update", "taxes", "init", "tax_region", "init"]
-    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
+    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card?promo=plus-1-month-free"
 
 
 def test_manual_card_flow_accepts_card_with_other_methods(monkeypatch):
     result = run_flow(monkeypatch, ["link", "card"], [])
 
-    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
+    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card?promo=plus-1-month-free"
 
 
 def test_manual_card_flow_rejects_missing_card(monkeypatch):
@@ -199,7 +200,7 @@ def test_manual_card_flow_falls_back_to_checkout_page(monkeypatch):
         {},
     )
 
-    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
+    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card?promo=plus-1-month-free"
 
 
 def test_turkey_checkout_taxes_uses_tr_currency():
@@ -217,7 +218,7 @@ def test_turkey_checkout_taxes_uses_tr_currency():
 
 
 def test_turkey_checkout_update_uses_tr_billing_details(monkeypatch):
-    monkeypatch.setenv("PP_PROMO_MODE", "trial")
+    monkeypatch.setenv("PP_PROMO_MODE", "query")
     session = FakeChatgptSession()
 
     card.update_turkey_checkout_promotion(session, checkout())
@@ -228,11 +229,14 @@ def test_turkey_checkout_update_uses_tr_billing_details(monkeypatch):
         "currency": "USD",
     }
     assert "subscription_data" not in session.body
-    assert "promo_campaign" not in session.body
+    assert session.body["promo_campaign"] == {
+        "promo_campaign_id": "plus-1-month-free",
+        "is_coupon_from_query_param": True,
+    }
 
 
 def test_turkey_checkout_update_switches_returned_session(monkeypatch):
-    monkeypatch.setenv("PP_PROMO_MODE", "trial")
+    monkeypatch.setenv("PP_PROMO_MODE", "query")
 
     class UpdateSession(FakeChatgptSession):
         def post(self, url, json=None, headers=None, timeout=None):
@@ -297,7 +301,7 @@ def test_manual_card_flow_preserves_existing_zero_without_update(monkeypatch):
     )
 
     assert qr_urls == []
-    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
+    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card?promo=plus-1-month-free"
     assert events == ["activate", "init", "init"]
 
 
@@ -340,5 +344,5 @@ def test_manual_card_flow_returns_direct_refresh_url_before_update(monkeypatch):
     )
 
     assert qr_urls == []
-    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
+    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card?promo=plus-1-month-free"
     assert events == ["activate", "init", "init"]
