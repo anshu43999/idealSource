@@ -18,13 +18,14 @@ class FakeChatgptSession:
         self.body = dict(json or {})
         return SimpleNamespace(
             status_code=200,
-            text='{"checkout_session_id":"cs_test_card"}',
+            text='{"checkout_session_id":"cs_test_card","checkout_url":"https://chatgpt.com/checkout/openai_llc/oaics_test_card"}',
             url=url,
             headers={},
             json=lambda: {
                 "checkout_session_id": "cs_test_card",
                 "publishable_key": "pk_test_card",
-                "processor_entity": "openai_ie",
+                "processor_entity": "openai_llc",
+                "checkout_url": "https://chatgpt.com/checkout/openai_llc/oaics_test_card",
             },
         )
 
@@ -35,7 +36,9 @@ def checkout() -> dict[str, str]:
         "stripe_pk": "pk_test_card",
         "currency": "USD",
         "billing_country": "US",
-        "processor_entity": "openai_ie",
+        "processor_entity": "openai_llc",
+        "checkout_page_id": "oaics_test_card",
+        "checkout_page_processor": "openai_llc",
     }
 
 
@@ -117,9 +120,29 @@ def test_turkey_checkout_creates_with_promotion(monkeypatch):
 
     assert created["billing_country"] == "US"
     assert created["currency"] == "USD"
+    assert created["checkout_page_id"] == "oaics_test_card"
+    assert created["checkout_page_processor"] == "openai_llc"
+    assert card.flow.checkout_page_url(created) == "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
     assert chatgpt.body["billing_details"] == {"country": "US", "currency": "USD"}
     assert chatgpt.body["promo_campaign"]["promo_campaign_id"] == "plus-1-month-free"
     assert "coupon" not in chatgpt.body
+
+
+def test_checkout_page_url_prefers_oaics_over_cs_checkout_url():
+    fields = card.flow.checkout_page_fields_from_payload(
+        {
+            "checkout_url": "https://chatgpt.com/checkout/openai_llc/cs_test_card",
+            "id": "oaics_real_card",
+        }
+    )
+    checkout_data = {
+        "cs_id": "cs_test_card",
+        "billing_country": "US",
+        "processor_entity": "openai_ie",
+        **fields,
+    }
+
+    assert card.flow.checkout_page_url(checkout_data) == "https://chatgpt.com/checkout/openai_llc/oaics_real_card"
 
 
 def test_manual_card_flow_updates_then_initializes(monkeypatch):
@@ -128,13 +151,13 @@ def test_manual_card_flow_updates_then_initializes(monkeypatch):
     result = run_flow(monkeypatch, ["card", "link"], events)
 
     assert events == ["activate", "init", "update", "taxes", "init", "tax_region", "init"]
-    assert result == "https://checkout.stripe.com/c/pay/cs_test_card?test=1"
+    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
 
 
 def test_manual_card_flow_accepts_card_with_other_methods(monkeypatch):
     result = run_flow(monkeypatch, ["link", "card"], [])
 
-    assert result.startswith("https://checkout.stripe.com/")
+    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
 
 
 def test_manual_card_flow_rejects_missing_card(monkeypatch):
@@ -173,7 +196,7 @@ def test_manual_card_flow_falls_back_to_checkout_page(monkeypatch):
         {},
     )
 
-    assert result == "https://checkout.stripe.com/c/pay/cs_test_card"
+    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
 
 
 def test_turkey_checkout_taxes_uses_tr_currency():
@@ -218,7 +241,8 @@ def test_turkey_checkout_update_switches_returned_session():
                 json=lambda: {
                     "checkout_session_id": "cs_test_tr_zero",
                     "publishable_key": "pk_test_tr",
-                    "processor_entity": "openai_ie",
+                    "processor_entity": "openai_llc",
+                    "checkout_url": "https://chatgpt.com/checkout/openai_llc/oaics_test_tr_zero",
                 },
             )
 
@@ -229,7 +253,9 @@ def test_turkey_checkout_update_switches_returned_session():
 
     assert checkout_data["cs_id"] == "cs_test_tr_zero"
     assert checkout_data["stripe_pk"] == "pk_test_tr"
-    assert checkout_data["processor_entity"] == "openai_ie"
+    assert checkout_data["processor_entity"] == "openai_llc"
+    assert checkout_data["checkout_page_id"] == "oaics_test_tr_zero"
+    assert card.flow.checkout_page_url(checkout_data) == "https://chatgpt.com/checkout/openai_llc/oaics_test_tr_zero"
 
 
 def test_manual_card_flow_preserves_existing_zero_without_update(monkeypatch):
@@ -267,7 +293,7 @@ def test_manual_card_flow_preserves_existing_zero_without_update(monkeypatch):
     )
 
     assert qr_urls == []
-    assert result == "https://checkout.stripe.com/c/pay/cs_test_card?test=1"
+    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
     assert events == ["activate", "init", "init"]
 
 
@@ -310,5 +336,5 @@ def test_manual_card_flow_returns_direct_refresh_url_before_update(monkeypatch):
     )
 
     assert qr_urls == []
-    assert result == "https://checkout.stripe.com/c/pay/cs_direct_refresh?test=1"
+    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
     assert events == ["activate", "init", "init"]

@@ -142,6 +142,7 @@ def update_turkey_checkout_promotion(
     if new_cs_id and new_cs_id != checkout["cs_id"]:
         flow.log(f"TR checkout/update 返回新 checkout_session_id，切换 session: {new_cs_id}")
         checkout["cs_id"] = new_cs_id
+    checkout.update(flow.checkout_page_fields_from_payload(payload))
     keys = ",".join(sorted(payload.keys())[:12]) if isinstance(payload, dict) else type(payload).__name__
     flow.log(
         f"TR checkout/update 成功: billing=TR/{flow.currency_for_country('TR')}, "
@@ -260,12 +261,6 @@ def run_manual_card_flow(
     stripe_pk = checkout.get("stripe_pk") or flow.DEFAULT_STRIPE_PK
 
     def manual_card_url(payload: dict[str, Any]) -> str:
-        hosted_url = str(payload.get("stripe_hosted_url") or "")
-        if hosted_url:
-            return hosted_url
-        cs_id = str(checkout.get("cs_id") or "")
-        if cs_id.startswith("cs_"):
-            return f"https://checkout.stripe.com/c/pay/{cs_id}"
         return flow.checkout_page_url(checkout)
 
     if stop_event and stop_event.is_set():

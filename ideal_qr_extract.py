@@ -1386,7 +1386,11 @@ def create_checkout(chatgpt: requests.Session, country: str) -> dict[str, str]:
         data = resp.json() or {}
         log(f"promo_campaign 重试后 promo={checkout_response_has_promo(data)}", "[PROMO] ")
 
-    cs_id = data.get("checkout_session_id") or data.get("session_id") or data.get("id")
+    cs_id = data.get("checkout_session_id") or data.get("session_id")
+    if not cs_id and str(data.get("id") or "").startswith("cs_"):
+        cs_id = data.get("id")
+    if not cs_id:
+        cs_id = first_value_by_key(data, "checkout_session_id") or first_value_by_key(data, "session_id")
     if not cs_id or not str(cs_id).startswith("cs_"):
         raise RuntimeError(f"checkout 响应缺少 cs_id: {str(data)[:500]}")
 
@@ -1406,21 +1410,81 @@ def create_checkout(chatgpt: requests.Session, country: str) -> dict[str, str]:
         f"mode={promo_mode} / promo={checkout_response_has_promo(data)} / "
         f"trial={checkout_response_has_trial(data)}"
     )
-    return {
+    checkout = {
         "cs_id": str(cs_id),
         "processor_entity": processor_entity,
         "stripe_pk": stripe_pk,
         "billing_country": country,
         "currency": currency_for_country(country),
     }
+    checkout.update(checkout_page_fields_from_payload(data))
+    return checkout
+
+
+def checkout_page_fields_from_payload(payload: Any) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    fallback_fields: dict[str, str] = {}
+    for key in ("checkout_url", "checkoutUrl", "url", "payment_url", "paymentUrl"):
+        value = str(first_value_by_key(payload, key) or "").strip()
+        if not value:
+            continue
+        match = re.search(r"(?:https?://[^/]+)?/checkout/([^/?#]+)/([^/?#]+)", value)
+        if match:
+            processor, page_id = match.group(1), unquote(match.group(2))
+            url_fields = {
+                "checkout_page_processor": processor,
+                "checkout_page_id": page_id,
+                "checkout_page_url": (
+                    value
+                    if value.startswith(("http://", "https://"))
+                    else f"https://chatgpt.com{value}"
+                ),
+            }
+            if page_id.startswith("oaics_"):
+                return url_fields
+            if not fallback_fields:
+                fallback_fields = url_fields
+
+    for key in ("checkout_page_id", "checkoutPageId", "openai_checkout_session_id", "openaiCheckoutSessionId", "id"):
+        value = str(first_value_by_key(payload, key) or "").strip()
+        if value.startswith("oaics_"):
+            fields["checkout_page_id"] = value
+            return fields
+
+    try:
+        text = json.dumps(payload, ensure_ascii=False)
+    except Exception:
+        text = str(payload)
+    match = re.search(r"\boaics_[A-Za-z0-9]+", text)
+    if match:
+        fields["checkout_page_id"] = match.group(0)
+        return fields
+    return fallback_fields
 
 
 def checkout_page_url(checkout: dict[str, str]) -> str:
-    processor = processor_entity_for_country(
-        IDEAL_BOOTSTRAP_COUNTRY,
-        checkout.get("processor_entity") or "",
-    )
-    return f"https://chatgpt.com/checkout/{processor}/{checkout['cs_id']}"
+    page_id = str(checkout.get("checkout_page_id") or "").strip()
+    processor = str(checkout.get("checkout_page_processor") or "")
+    if page_id.startswith("oaics_"):
+        if not processor:
+            processor = (
+                "openai_llc"
+                if normalize_country(checkout.get("billing_country") or IDEAL_BOOTSTRAP_COUNTRY) == "US"
+                else processor_entity_for_country(
+                    IDEAL_BOOTSTRAP_COUNTRY,
+                    checkout.get("processor_entity") or "",
+                )
+            )
+        return f"https://chatgpt.com/checkout/{processor}/{page_id}"
+    saved_url = str(checkout.get("checkout_page_url") or "").strip()
+    if saved_url.startswith(("http://", "https://")) and "/checkout/" in saved_url:
+        return saved_url
+    if not processor:
+        processor = processor_entity_for_country(
+            IDEAL_BOOTSTRAP_COUNTRY,
+            checkout.get("processor_entity") or "",
+        )
+    return f"https://chatgpt.com/checkout/{processor}/{page_id or checkout['cs_id']}"
 
 
 def update_checkout_promotion(
