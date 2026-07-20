@@ -902,7 +902,7 @@
     const providerCountryInput = document.getElementById('providerCountry');
     const COUNTRY_CHAIN_DEFAULTS = {
       ideal: { bootstrap: 'NL', promotion: 'VN', provider: 'NL' },
-      turkey_card: { bootstrap: 'US', promotion: 'TR', provider: 'TR' },
+      turkey_card: { bootstrap: 'US', promotion: 'TR', provider: 'US' },
       pix: { bootstrap: 'BR', promotion: 'BR', provider: 'BR' },
       kakao_pay: { bootstrap: 'KR', promotion: 'VN', provider: 'KR' },
       twint: { bootstrap: 'CH', promotion: 'VN', provider: 'CH' },
@@ -1125,7 +1125,7 @@
           isPix
             ? 'PIX 固定七步 BR 链路：主 BR 创建 checkout 并首次 init 校验 PIX；第二组 BR 应用优惠和同步税务；返回主 BR 校验 0 元后创建 PIX，最后 confirm、approve、poll。'
             : isTurkeyCard
-            ? 'Turkey Card 固定链路：US 创建非 0 Checkout，TR 执行 checkout/update 并通过 TR Stripe Init 校验 0 元 Card 页面。'
+            ? 'Turkey Card 固定链路：US 创建 Checkout，TR 执行 checkout/update 应用优惠，再回到 US 同步账单、税区并校验最终 0 元 Card 页面。'
             : isUpi
             ? 'UPI 链路：IN 创建 checkout 与首次 Stripe init；BR/VN/JP/TR promotion pool 依次 checkout/update；回到 IN Stripe refresh、税务、UPI、confirm 与 approve。'
             : `${paymentLabel}：第一段用于 Checkout 与首次 Stripe init，第二段用于 checkout/update，第三段用于 Stripe refresh、税务、PM、confirm 与 approve。`;

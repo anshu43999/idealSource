@@ -77,7 +77,7 @@ PAYMENT_METHODS: dict[str, dict[str, Any]] = {
     },
     "turkey_card": {
         "label": "Turkey Card",
-        "flow": "US/TR/TR",
+        "flow": "US/TR/US",
         "available": True,
         "script_path": TURKEY_CARD_SCRIPT_PATH,
         "result_marker": "Turkey Card 最终支付 URL:",
@@ -121,7 +121,7 @@ PAYMENT_METHODS: dict[str, dict[str, Any]] = {
 
 PAYMENT_CHAIN_DEFAULTS: dict[str, tuple[str, str, str]] = {
     "ideal": ("NL", "VN", "NL"),
-    "turkey_card": ("US", "TR", "TR"),
+    "turkey_card": ("US", "TR", "US"),
     "pix": ("BR", "BR", "BR"),
     "kakao_pay": ("KR", "VN", "KR"),
     "twint": ("CH", "VN", "CH"),
@@ -423,7 +423,7 @@ def build_environment(
         elif payment_method == "turkey_card":
             bootstrap_country = "US"
             promotion_country = "TR"
-            provider_country = "TR"
+            provider_country = "US"
         else:
             bootstrap_country = clean_country_code(payload, "bootstrap_country", default_chain[0])
             promotion_country = (
@@ -487,7 +487,7 @@ def build_environment(
             clean_text(payload, "manual_promotion_proxy_file", str(promotion_path)),
             "Turkey Card TR 代理文件",
         )
-        manual_provider_proxy_file = manual_promotion_proxy_file
+        manual_provider_proxy_file = manual_checkout_proxy_file
     if payment_method in MANUAL_PROXY_METHODS and not manual_checkout_proxy_file:
         primary_path, promotion_path = manual_proxy_paths(payment_method) or (KAKAO_KR_PROXY_SEED_PATH, KAKAO_VN_PROXY_SEED_PATH)
         manual_checkout_proxy_file = resolve_proxy_file(
@@ -693,7 +693,7 @@ def build_environment(
                 if payment_method == "blik"
                 else "ko-KR"
                 if payment_method == "kakao_pay"
-                else "tr-TR"
+                else "en-US"
                 if payment_method == "turkey_card"
                 else "nl-NL"
             ),
@@ -702,7 +702,7 @@ def build_environment(
                 if payment_method == "blik"
                 else "ko"
                 if payment_method == "kakao_pay"
-                else "tr"
+                else "en"
                 if payment_method == "turkey_card"
                 else "nl"
             ),
@@ -711,7 +711,7 @@ def build_environment(
                 if payment_method == "blik"
                 else "Asia/Seoul"
                 if payment_method == "kakao_pay"
-                else "Europe/Istanbul"
+                else "America/New_York"
                 if payment_method == "turkey_card"
                 else "Europe/Amsterdam"
             ),
@@ -757,7 +757,7 @@ def build_environment(
                 {
                     "IDEAL_STRIPE_PAYMENT_METHOD": "card",
                     "IDEAL_RESULT_LABEL": "Turkey Card 最终支付 URL",
-                    "PP_PROMO_MODE": "query",
+                    "PP_PROMO_MODE": "campaign",
                     "IDEAL_DEFER_PROMO_TO_UPDATE": "0",
                     "IDEAL_SKIP_BOOTSTRAP_INIT": "1",
                 }

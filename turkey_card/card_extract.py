@@ -1,4 +1,4 @@
-"""Turkey Card flow: US checkout -> TR update -> TR manual card page."""
+"""Turkey Card flow: US checkout -> TR promotion -> US manual card page."""
 
 from __future__ import annotations
 
@@ -16,35 +16,35 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("IDEAL_BOOTSTRAP_COUNTRY", "US")
 os.environ.setdefault("IDEAL_PROMOTION_COUNTRY", "TR")
-os.environ.setdefault("IDEAL_PROVIDER_COUNTRY", "TR")
+os.environ.setdefault("IDEAL_PROVIDER_COUNTRY", "US")
 os.environ.setdefault("IDEAL_CHECKOUT_COUNTRY", "US")
-os.environ.setdefault("IDEAL_BILLING_COUNTRY", "TR")
+os.environ.setdefault("IDEAL_BILLING_COUNTRY", "US")
 os.environ.setdefault("IDEAL_STRIPE_PAYMENT_METHOD", "card")
 os.environ.setdefault("IDEAL_RESULT_LABEL", "Turkey Card 最终支付 URL")
-os.environ["PP_PROMO_MODE"] = "query"
+os.environ["PP_PROMO_MODE"] = "campaign"
 os.environ.setdefault("IDEAL_DEFER_PROMO_TO_UPDATE", "0")
 os.environ.setdefault("IDEAL_SKIP_BOOTSTRAP_INIT", "1")
 os.environ.setdefault("IDEAL_CHECKOUT_PROXY_FILE", str(SCRIPT_DIR / "us_proxy_seeds.txt"))
 os.environ.setdefault("IDEAL_PROMOTION_PROXY_FILE", str(SCRIPT_DIR / "tr_proxy_seeds.txt"))
-os.environ.setdefault("IDEAL_PROVIDER_PROXY_FILE", str(SCRIPT_DIR / "tr_proxy_seeds.txt"))
+os.environ.setdefault("IDEAL_PROVIDER_PROXY_FILE", str(SCRIPT_DIR / "us_proxy_seeds.txt"))
 
 import ideal_qr_extract as flow
 
 
-TURKEY_BILLING = {
+US_BILLING = {
     "email": "redacted@example.invalid",
-    "name": "Mehmet Yilmaz",
-    "country": "TR",
-    "line1": "Istiklal Caddesi 10",
+    "name": "John Smith",
+    "country": "US",
+    "line1": "350 Fifth Avenue",
     "line2": "",
-    "city": "Istanbul",
-    "postal_code": "34433",
-    "state": "",
+    "city": "New York",
+    "postal_code": "10118",
+    "state": "NY",
 }
 
 
-def turkey_billing_profile() -> dict[str, str]:
-    profile = dict(TURKEY_BILLING)
+def us_billing_profile() -> dict[str, str]:
+    profile = dict(US_BILLING)
     env_map = {
         "email": "IDEAL_EMAIL",
         "name": "IDEAL_NAME",
@@ -58,7 +58,7 @@ def turkey_billing_profile() -> dict[str, str]:
         value = os.environ.get(env_name, "").strip()
         if value:
             profile[key] = value
-    profile["country"] = "TR"
+    profile["country"] = "US"
     return profile
 
 
@@ -152,7 +152,7 @@ def update_turkey_checkout_promotion(
     )
 
 
-def update_turkey_checkout_taxes(
+def update_us_checkout_taxes(
     chatgpt: Any,
     checkout: dict[str, str],
     billing: dict[str, str],
@@ -161,9 +161,9 @@ def update_turkey_checkout_taxes(
     body = {
         "checkout_session_id": checkout["cs_id"],
         "checkout_email": billing["email"],
-        "billing_country": "TR",
+        "billing_country": "US",
         "billing_name": billing["name"],
-        "currency": flow.currency_for_country("TR"),
+        "currency": flow.currency_for_country("US"),
         "tax_id": None,
         "processor_entity": flow.processor_entity_for_country(
             flow.IDEAL_BOOTSTRAP_COUNTRY,
@@ -172,7 +172,7 @@ def update_turkey_checkout_taxes(
         "billing_address": {
             "line1": billing["line1"],
             "city": billing["city"],
-            "country": "TR",
+            "country": "US",
             "postal_code": billing["postal_code"],
         },
     }
@@ -192,8 +192,25 @@ def update_turkey_checkout_taxes(
     if resp.status_code >= 400:
         if flow.is_checkout_not_active_error(resp.text):
             raise RuntimeError("checkout_not_active_session")
-        raise RuntimeError(f"TR checkout/taxes 失败 HTTP {resp.status_code}: {resp.text[:500]}")
-    flow.log(f"TR checkout/taxes 同步成功: currency={flow.currency_for_country('TR')}")
+        raise RuntimeError(f"US checkout/taxes 失败 HTTP {resp.status_code}: {resp.text[:500]}")
+    flow.log(f"US checkout/taxes 同步成功: currency={flow.currency_for_country('US')}")
+
+
+def enforce_us_checkout_identity(checkout: dict[str, str]) -> None:
+    processor = str(checkout.get("processor_entity") or "")
+    page_processor = str(checkout.get("checkout_page_processor") or "")
+    if processor and processor != "openai_llc":
+        raise RuntimeError(f"US 最终 session processor 不一致: {processor}")
+    if page_processor and page_processor != "openai_llc":
+        raise RuntimeError(f"US 最终短链 processor 不一致: {page_processor}")
+    checkout.update(
+        {
+            "billing_country": "US",
+            "currency": "USD",
+            "processor_entity": "openai_llc",
+            "checkout_page_processor": "openai_llc",
+        }
+    )
 
 
 def inspect_card_init(
@@ -213,6 +230,14 @@ def inspect_card_init(
             f"{flow.IDEAL_UNAVAILABLE_ERROR}: payment_method_types={methods}"
         )
 
+    total_summary = init_payload.get("total_summary")
+    invoice = init_payload.get("invoice")
+    if not (
+        isinstance(total_summary, dict) and total_summary.get("due") is not None
+    ) and not (
+        isinstance(invoice, dict) and invoice.get("amount_due") is not None
+    ):
+        raise RuntimeError(f"{stage} Stripe Init 缺少可确认的应付金额字段")
     amount = flow.amount_from_payload(init_payload)
     currency_value = flow.first_value_by_key(init_payload, "currency")
     currency = str(currency_value or checkout.get("currency") or "").upper()
@@ -256,19 +281,15 @@ def run_manual_card_flow(
     billing: dict[str, str],
     stop_event: Any = None,
 ) -> tuple[str, list[str]]:
-    """Create from US, convert through TR update, then return the hosted form."""
+    """Create in US, apply the promotion through TR, then finalize in US."""
     del approve_pool, billing
-    tr_billing = turkey_billing_profile()
+    us_billing = us_billing_profile()
     stripe_pk = checkout.get("stripe_pk") or flow.DEFAULT_STRIPE_PK
 
     def manual_card_url(payload: dict[str, Any]) -> str:
-        url = flow.checkout_page_url(checkout)
-        mode = os.environ.get("PP_PROMO_MODE", "").strip().lower()
-        promo_id = os.environ.get("PP_PROMO_ID", "plus-1-month-free").strip()
-        if mode == "query" and promo_id and "promo=" not in url:
-            separator = "&" if "?" in url else "?"
-            return f"{url}{separator}promo={promo_id}"
-        return url
+        del payload
+        enforce_us_checkout_identity(checkout)
+        return flow.checkout_page_url(checkout)
 
     if stop_event and stop_event.is_set():
         raise RuntimeError("任务已停止，跳过本轮")
@@ -282,19 +303,15 @@ def run_manual_card_flow(
     if bootstrap_amount == 0:
         flow.log(
             "US Bootstrap 已经是 0 元；跳过会重算价格的 TR checkout/update，"
-            "改为直接用 TR Provider 刷新并输出手动 Card 页面"
+            "直接用 US Provider 刷新并输出手动 Card 页面"
         )
-        tr_payload = flow.stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
-        _tr_ctx, tr_amount = inspect_card_init(checkout, tr_payload, "TR Provider 直接刷新")
-        flow.record_checkout_zero_result(provider_proxy, "TR", tr_amount)
-        manual_url = manual_card_url(tr_payload)
-        flow.log(f"TR Provider direct refresh Card URL: {manual_url[:180]}")
-        if tr_amount != 0:
-            flow.log(
-                f"TR Provider direct refresh amount is not zero: {tr_amount}; "
-                "returning the direct refresh Stripe hosted URL",
-                "[WARN] ",
-            )
+        us_payload = flow.stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
+        _us_ctx, us_amount = inspect_card_init(checkout, us_payload, "US Provider 直接刷新")
+        flow.record_checkout_zero_result(provider_proxy, "US", us_amount)
+        if us_amount != 0:
+            raise RuntimeError(f"US Provider 最终金额不是 0: {us_amount}")
+        manual_url = manual_card_url(us_payload)
+        flow.log(f"US Provider direct refresh Card URL: {manual_url[:180]}")
         return manual_url, []
 
     if stop_event and stop_event.is_set():
@@ -302,11 +319,10 @@ def run_manual_card_flow(
 
     flow.log(f"TR checkout/update: proxy={flow.proxy_label(promotion_proxy)}")
     try:
-        chatgpt = flow.build_chatgpt_session(
+        promotion_chatgpt = flow.build_chatgpt_session(
             access_token, device_id, promotion_proxy, session_token
         )
-        update_turkey_checkout_promotion(chatgpt, checkout)
-        update_turkey_checkout_taxes(chatgpt, checkout, tr_billing)
+        update_turkey_checkout_promotion(promotion_chatgpt, checkout)
     except Exception as exc:
         if flow.is_checkout_not_active_error(exc):
             raise
@@ -314,17 +330,23 @@ def run_manual_card_flow(
     flow.record_proxy_result(
         "promotion", promotion_proxy, True, "promotion_update_success"
     )
+    stripe_pk = checkout.get("stripe_pk") or flow.DEFAULT_STRIPE_PK
 
     if stop_event and stop_event.is_set():
         raise RuntimeError("任务已停止，跳过本轮")
 
     flow.log(
-        "TR checkout/update 后通过 TR Stripe Init 校验 Card 与 0 元金额: "
+        "TR checkout/update 后回到 US checkout/taxes 与 Stripe Init 校验 Card/0 元: "
         f"proxy={flow.proxy_label(provider_proxy)}"
     )
+    enforce_us_checkout_identity(checkout)
+    final_chatgpt = flow.build_chatgpt_session(
+        access_token, device_id, provider_proxy, session_token
+    )
+    update_us_checkout_taxes(final_chatgpt, checkout, us_billing)
     init_payload = flow.stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
-    ctx, amount = inspect_card_init(checkout, init_payload, "TR checkout/taxes 后")
-    flow.log("提交 TR Stripe tax_region 并重新刷新 Stripe Init...")
+    ctx, amount = inspect_card_init(checkout, init_payload, "US checkout/taxes 后")
+    flow.log("提交 US Stripe tax_region 并重新刷新 Stripe Init...")
     stripe = flow.new_session(provider_proxy)
     stripe.headers.update(
         {
@@ -332,18 +354,18 @@ def run_manual_card_flow(
             "Accept-Language": flow.payment_accept_language(),
         }
     )
-    if not flow.stripe_update_tax_region(stripe, checkout["cs_id"], stripe_pk, ctx, tr_billing):
-        raise RuntimeError("TR Stripe tax_region 提交失败，无法确认 0 元状态")
+    if not flow.stripe_update_tax_region(stripe, checkout["cs_id"], stripe_pk, ctx, us_billing):
+        raise RuntimeError("US Stripe tax_region 提交失败，无法确认 0 元状态")
     init_payload = flow.stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
-    _ctx, amount = inspect_card_init(checkout, init_payload, "TR tax_region 后")
-    flow.record_checkout_zero_result(provider_proxy, "TR", amount)
+    _ctx, amount = inspect_card_init(checkout, init_payload, "US tax_region 后")
+    flow.record_checkout_zero_result(provider_proxy, "US", amount)
     if amount != 0:
         raise RuntimeError(
             f"0 元优惠未生效，当前金额小单位={amount}，已停止生成手动 Card 支付链接"
         )
 
     manual_url = manual_card_url(init_payload)
-    flow.log(f"Card 渠道可用，返回手动填写卡片页面: {manual_url[:180]}")
+    flow.log(f"US Card 渠道可用且最终金额为 0，返回手动填写卡片页面: {manual_url[:180]}")
     return manual_url, []
 
 
@@ -354,12 +376,11 @@ def configure_flow() -> None:
     flow.LOG_DIR.mkdir(parents=True, exist_ok=True)
     flow.DUMP_DIR.mkdir(parents=True, exist_ok=True)
     flow._log_file = flow.LOG_DIR / f"turkey_card_{time.strftime('%Y%m%d-%H%M%S')}.log"
-    # ChatGPT checkout accepts TR as a billing country, but TRY is not in its
-    # checkout currency enum. TR is only used for update/final Stripe Init.
+    # TR is only used to apply the promotion; the payable session is finalized in US.
     flow.COUNTRY_CURRENCY.update({"TR": "USD", "US": "USD"})
     flow.IDEAL_BOOTSTRAP_COUNTRY = "US"
     flow.IDEAL_PROMOTION_COUNTRY = "TR"
-    flow.IDEAL_PROVIDER_COUNTRY = "TR"
+    flow.IDEAL_PROVIDER_COUNTRY = "US"
     flow.EXPECTED_PAYMENT_METHOD_TYPE = "card"
     flow.RESULT_LABEL = "Turkey Card 最终支付 URL"
     flow.IDEAL_UNAVAILABLE_ERROR = "当前账号支付方式不支持 Card"

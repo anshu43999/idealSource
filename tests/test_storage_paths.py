@@ -72,20 +72,20 @@ class StoragePathTests(unittest.TestCase):
         primary_path, promotion_path = ideal_ui.manual_proxy_paths("turkey_card")
         proxy_path, token_path = ideal_ui.payment_storage_paths("turkey_card")
 
-        self.assertEqual(primary_path, ideal_ui.TURKEY_CARD_GB_PROXY_SEED_PATH)
+        self.assertEqual(primary_path, ideal_ui.TURKEY_CARD_US_PROXY_SEED_PATH)
         self.assertEqual(promotion_path, ideal_ui.TURKEY_CARD_TR_PROXY_SEED_PATH)
-        self.assertEqual(proxy_path, ideal_ui.TURKEY_CARD_GB_PROXY_SEED_PATH)
+        self.assertEqual(proxy_path, ideal_ui.TURKEY_CARD_US_PROXY_SEED_PATH)
         self.assertEqual(token_path, ideal_ui.TURKEY_CARD_TOKEN_PATH)
         self.assertEqual(
             ideal_ui.PAYMENT_CHAIN_DEFAULTS["turkey_card"],
-            ("GB", "TR", "TR"),
+            ("US", "TR", "US"),
         )
 
     def test_turkey_card_environment_is_fixed_and_secret_free(self) -> None:
         payload = {
             "token": "test-token",
             "proxy_seed_file": str(ideal_ui.TURKEY_CARD_TR_PROXY_SEED_PATH),
-            "manual_checkout_proxy_file": str(ideal_ui.TURKEY_CARD_GB_PROXY_SEED_PATH),
+            "manual_checkout_proxy_file": str(ideal_ui.TURKEY_CARD_US_PROXY_SEED_PATH),
             "manual_provider_proxy_file": str(ideal_ui.TURKEY_CARD_TR_PROXY_SEED_PATH),
             "manual_promotion_proxy_file": str(ideal_ui.TURKEY_CARD_TR_PROXY_SEED_PATH),
             "bootstrap_country": "US",
@@ -100,12 +100,17 @@ class StoragePathTests(unittest.TestCase):
                 ideal_ui.PAYMENT_METHODS["turkey_card"],
             )
 
-        self.assertEqual(env["IDEAL_BOOTSTRAP_COUNTRY"], "GB")
+        self.assertEqual(env["IDEAL_BOOTSTRAP_COUNTRY"], "US")
         self.assertEqual(env["IDEAL_PROMOTION_COUNTRY"], "TR")
-        self.assertEqual(env["IDEAL_PROVIDER_COUNTRY"], "TR")
-        self.assertEqual(env["IDEAL_CHECKOUT_PROXY_FILE"], str(ideal_ui.TURKEY_CARD_GB_PROXY_SEED_PATH))
+        self.assertEqual(env["IDEAL_PROVIDER_COUNTRY"], "US")
+        self.assertEqual(env["IDEAL_BILLING_COUNTRY"], "US")
+        self.assertEqual(env["IDEAL_CHECKOUT_PROXY_FILE"], str(ideal_ui.TURKEY_CARD_US_PROXY_SEED_PATH))
         self.assertEqual(env["IDEAL_PROMOTION_PROXY_FILE"], str(ideal_ui.TURKEY_CARD_TR_PROXY_SEED_PATH))
-        self.assertEqual(env["IDEAL_PROVIDER_PROXY_FILE"], str(ideal_ui.TURKEY_CARD_TR_PROXY_SEED_PATH))
+        self.assertEqual(env["IDEAL_PROVIDER_PROXY_FILE"], str(ideal_ui.TURKEY_CARD_US_PROXY_SEED_PATH))
+        self.assertEqual(env["IDEAL_BROWSER_LOCALE"], "en-US")
+        self.assertEqual(env["IDEAL_ELEMENTS_LOCALE"], "en")
+        self.assertEqual(env["IDEAL_BROWSER_TIMEZONE"], "America/New_York")
+        self.assertEqual(env["PP_PROMO_MODE"], "campaign")
         self.assertEqual(env["IDEAL_STRIPE_PAYMENT_METHOD"], "card")
         self.assertEqual(env["IDEAL_DEFER_PROMO_TO_UPDATE"], "0")
         self.assertEqual(env["IDEAL_SKIP_BOOTSTRAP_INIT"], "1")

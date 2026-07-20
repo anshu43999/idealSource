@@ -60,7 +60,7 @@ def run_flow(monkeypatch, methods: list[str], events: list[str]) -> str:
     )
     monkeypatch.setattr(
         card,
-        "update_turkey_checkout_taxes",
+        "update_us_checkout_taxes",
         lambda *args, **kwargs: events.append("taxes"),
     )
 
@@ -94,7 +94,7 @@ def run_flow(monkeypatch, methods: list[str], events: list[str]) -> str:
         "session-token",
         "us-checkout-proxy",
         "tr-promotion-proxy",
-        "tr-provider-proxy",
+        "us-provider-proxy",
         [],
         "device-id",
         checkout(),
@@ -107,13 +107,13 @@ def run_flow(monkeypatch, methods: list[str], events: list[str]) -> str:
 def test_turkey_card_country_chain():
     assert card.flow.IDEAL_BOOTSTRAP_COUNTRY == "US"
     assert card.flow.IDEAL_PROMOTION_COUNTRY == "TR"
-    assert card.flow.IDEAL_PROVIDER_COUNTRY == "TR"
+    assert card.flow.IDEAL_PROVIDER_COUNTRY == "US"
     assert card.flow.COUNTRY_CURRENCY["TR"] == "USD"
     assert card.flow.COUNTRY_CURRENCY["US"] == "USD"
 
 
-def test_turkey_checkout_creates_with_query_promotion(monkeypatch):
-    monkeypatch.setenv("PP_PROMO_MODE", "query")
+def test_turkey_checkout_creates_with_campaign_promotion(monkeypatch):
+    monkeypatch.setenv("PP_PROMO_MODE", "campaign")
     monkeypatch.setenv("IDEAL_DEFER_PROMO_TO_UPDATE", "0")
     chatgpt = FakeChatgptSession()
 
@@ -127,7 +127,7 @@ def test_turkey_checkout_creates_with_query_promotion(monkeypatch):
     assert chatgpt.body["billing_details"] == {"country": "US", "currency": "USD"}
     assert chatgpt.body["promo_campaign"] == {
         "promo_campaign_id": "plus-1-month-free",
-        "is_coupon_from_query_param": True,
+        "is_coupon_from_query_param": False,
     }
     assert "coupon" not in chatgpt.body
 
@@ -155,13 +155,13 @@ def test_manual_card_flow_updates_then_initializes(monkeypatch):
     result = run_flow(monkeypatch, ["card", "link"], events)
 
     assert events == ["activate", "init", "update", "taxes", "init", "tax_region", "init"]
-    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card?promo=plus-1-month-free"
+    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
 
 
 def test_manual_card_flow_accepts_card_with_other_methods(monkeypatch):
     result = run_flow(monkeypatch, ["link", "card"], [])
 
-    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card?promo=plus-1-month-free"
+    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
 
 
 def test_manual_card_flow_rejects_missing_card(monkeypatch):
@@ -173,7 +173,7 @@ def test_manual_card_flow_falls_back_to_checkout_page(monkeypatch):
     monkeypatch.setattr(card.flow, "build_chatgpt_session", lambda *args: object())
     monkeypatch.setattr(card, "activate_turkey_checkout", lambda *args: None)
     monkeypatch.setattr(card, "update_turkey_checkout_promotion", lambda *args: None)
-    monkeypatch.setattr(card, "update_turkey_checkout_taxes", lambda *args: None)
+    monkeypatch.setattr(card, "update_us_checkout_taxes", lambda *args: None)
     monkeypatch.setattr(
         card.flow,
         "stripe_init",
@@ -193,32 +193,33 @@ def test_manual_card_flow_falls_back_to_checkout_page(monkeypatch):
         "session-token",
         "tr-checkout-proxy",
         "tr-promotion-proxy",
-        "tr-provider-proxy",
+        "us-provider-proxy",
         [],
         "device-id",
         checkout(),
         {},
     )
 
-    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card?promo=plus-1-month-free"
+    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
 
 
-def test_turkey_checkout_taxes_uses_tr_currency():
+def test_final_checkout_taxes_uses_us_billing():
     session = FakeChatgptSession()
 
-    card.update_turkey_checkout_taxes(
+    card.update_us_checkout_taxes(
         session,
         checkout(),
-        card.turkey_billing_profile(),
+        card.us_billing_profile(),
     )
 
-    assert session.body["billing_country"] == "TR"
+    assert session.body["billing_country"] == "US"
     assert session.body["currency"] == "USD"
-    assert session.body["billing_address"]["country"] == "TR"
+    assert session.body["billing_address"]["country"] == "US"
+    assert session.body["billing_address"]["state"] == "NY"
 
 
 def test_turkey_checkout_update_uses_tr_billing_details(monkeypatch):
-    monkeypatch.setenv("PP_PROMO_MODE", "query")
+    monkeypatch.setenv("PP_PROMO_MODE", "campaign")
     session = FakeChatgptSession()
 
     card.update_turkey_checkout_promotion(session, checkout())
@@ -231,12 +232,12 @@ def test_turkey_checkout_update_uses_tr_billing_details(monkeypatch):
     assert "subscription_data" not in session.body
     assert session.body["promo_campaign"] == {
         "promo_campaign_id": "plus-1-month-free",
-        "is_coupon_from_query_param": True,
+        "is_coupon_from_query_param": False,
     }
 
 
 def test_turkey_checkout_update_switches_returned_session(monkeypatch):
-    monkeypatch.setenv("PP_PROMO_MODE", "query")
+    monkeypatch.setenv("PP_PROMO_MODE", "campaign")
 
     class UpdateSession(FakeChatgptSession):
         def post(self, url, json=None, headers=None, timeout=None):
@@ -271,7 +272,7 @@ def test_manual_card_flow_preserves_existing_zero_without_update(monkeypatch):
     monkeypatch.setattr(card, "activate_turkey_checkout", lambda *args: events.append("activate"))
     monkeypatch.setattr(card.flow, "build_chatgpt_session", lambda *args, **kwargs: object())
     monkeypatch.setattr(card, "update_turkey_checkout_promotion", lambda *args: events.append("update"))
-    monkeypatch.setattr(card, "update_turkey_checkout_taxes", lambda *args: events.append("taxes"))
+    monkeypatch.setattr(card, "update_us_checkout_taxes", lambda *args: events.append("taxes"))
     monkeypatch.setattr(card.flow, "build_ctx", lambda payload, checkout: {})
     monkeypatch.setattr(card.flow, "record_proxy_result", lambda *args: None)
     monkeypatch.setattr(card.flow, "record_checkout_zero_result", lambda *args: None)
@@ -293,7 +294,7 @@ def test_manual_card_flow_preserves_existing_zero_without_update(monkeypatch):
         "session-token",
         "us-checkout-proxy",
         "tr-promotion-proxy",
-        "tr-provider-proxy",
+        "us-provider-proxy",
         [],
         "device-id",
         checkout(),
@@ -301,16 +302,16 @@ def test_manual_card_flow_preserves_existing_zero_without_update(monkeypatch):
     )
 
     assert qr_urls == []
-    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card?promo=plus-1-month-free"
+    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
     assert events == ["activate", "init", "init"]
 
 
-def test_manual_card_flow_returns_direct_refresh_url_before_update(monkeypatch):
+def test_manual_card_flow_rejects_nonzero_us_direct_refresh(monkeypatch):
     events: list[str] = []
     monkeypatch.setattr(card, "activate_turkey_checkout", lambda *args: events.append("activate"))
     monkeypatch.setattr(card.flow, "build_chatgpt_session", lambda *args, **kwargs: object())
     monkeypatch.setattr(card, "update_turkey_checkout_promotion", lambda *args: events.append("update"))
-    monkeypatch.setattr(card, "update_turkey_checkout_taxes", lambda *args: events.append("taxes"))
+    monkeypatch.setattr(card, "update_us_checkout_taxes", lambda *args: events.append("taxes"))
     monkeypatch.setattr(card.flow, "build_ctx", lambda payload, checkout: {})
     monkeypatch.setattr(card.flow, "record_proxy_result", lambda *args: None)
     monkeypatch.setattr(card.flow, "record_checkout_zero_result", lambda *args: None)
@@ -331,18 +332,17 @@ def test_manual_card_flow_returns_direct_refresh_url_before_update(monkeypatch):
 
     monkeypatch.setattr(card.flow, "stripe_init", fake_init)
 
-    result, qr_urls = card.run_manual_card_flow(
-        "access-token",
-        "session-token",
-        "us-checkout-proxy",
-        "tr-promotion-proxy",
-        "tr-provider-proxy",
-        [],
-        "device-id",
-        checkout(),
-        {},
-    )
+    with pytest.raises(RuntimeError, match="US Provider 最终金额不是 0"):
+        card.run_manual_card_flow(
+            "access-token",
+            "session-token",
+            "us-checkout-proxy",
+            "tr-promotion-proxy",
+            "us-provider-proxy",
+            [],
+            "device-id",
+            checkout(),
+            {},
+        )
 
-    assert qr_urls == []
-    assert result == "https://chatgpt.com/checkout/openai_llc/oaics_test_card?promo=plus-1-month-free"
     assert events == ["activate", "init", "init"]
