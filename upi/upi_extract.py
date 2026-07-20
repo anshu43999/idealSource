@@ -1333,6 +1333,8 @@ def create_checkout(chatgpt: requests.Session, country: str) -> dict[str, str]:
         body["coupon"] = promo_id
     elif promo_mode == "code":
         body["promotion_code"] = promo_id
+    elif promo_mode == "deferred":
+        log(f"Checkout promo deferred to checkout/update: id={promo_id}")
     elif promo_mode != "off":
         log(f"未知 PP_PROMO_MODE={promo_mode!r}，已忽略", "[WARN] ")
     log(f"Checkout promo: mode={promo_mode}, id={promo_id}")
