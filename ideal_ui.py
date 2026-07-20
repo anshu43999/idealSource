@@ -112,7 +112,7 @@ PAYMENT_METHODS: dict[str, dict[str, Any]] = {
     },
     "upi": {
         "label": "UPI",
-        "flow": "IN/VN/IN",
+        "flow": "IN/BR,VN,JP,TR/IN",
         "available": True,
         "script_path": UPI_SCRIPT_PATH,
         "result_marker": "UPI 最终支付 URL:",
@@ -125,7 +125,7 @@ PAYMENT_CHAIN_DEFAULTS: dict[str, tuple[str, str, str]] = {
     "pix": ("BR", "BR", "BR"),
     "kakao_pay": ("KR", "VN", "KR"),
     "twint": ("CH", "VN", "CH"),
-    "upi": ("IN", "VN", "IN"),
+    "upi": ("IN", "BR,VN,JP,TR", "IN"),
 }
 MANUAL_PROXY_METHODS = {"ideal", "turkey_card", "pix", "kakao_pay", "twint", "upi"}
 COUNTRY_CODE_RE = re.compile(r"[A-Z]{2}")
@@ -426,7 +426,11 @@ def build_environment(
             provider_country = "TR"
         else:
             bootstrap_country = clean_country_code(payload, "bootstrap_country", default_chain[0])
-            promotion_country = clean_country_code(payload, "promotion_country", default_chain[1])
+            promotion_country = (
+                clean_country_codes(payload, "promotion_country", default_chain[1])
+                if payment_method == "upi"
+                else clean_country_code(payload, "promotion_country", default_chain[1])
+            )
             provider_country = clean_country_code(payload, "provider_country", default_chain[2])
         checkout_country = bootstrap_country
         payment_method_country = provider_country
@@ -915,6 +919,7 @@ def build_environment(
                 "UPI_CHECKOUT_PROXY_COUNTRY": bootstrap_country,
                 "UPI_PROVIDER_PROXY_COUNTRIES": provider_country,
                 "UPI_PRE_PROXY": clean_text(payload, "pre_proxy", "", 500),
+                "PP_PROMO_MODE": "deferred",
             }
         )
         env.pop("IDEAL_BLIK_CODE", None)

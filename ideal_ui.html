@@ -906,7 +906,7 @@
       pix: { bootstrap: 'BR', promotion: 'BR', provider: 'BR' },
       kakao_pay: { bootstrap: 'KR', promotion: 'VN', provider: 'KR' },
       twint: { bootstrap: 'CH', promotion: 'VN', provider: 'CH' },
-      upi: { bootstrap: 'IN', promotion: 'VN', provider: 'IN' },
+      upi: { bootstrap: 'IN', promotion: 'BR,VN,JP,TR', provider: 'IN' },
     };
     const MANUAL_PROXY_METHODS = new Set(['ideal', 'turkey_card', 'pix', 'kakao_pay', 'twint', 'upi']);
     const COUNTRY_NAMES = {
@@ -915,6 +915,7 @@
       IN: 'India',
       KR: 'South Korea',
       NL: 'Netherlands',
+      JP: 'Japan',
       GB: 'United Kingdom',
       US: 'United States',
       TR: 'Turkey',
@@ -995,7 +996,7 @@
         : saved;
       return {
         bootstrap: normalizeCountryCode(source.bootstrap, defaults.bootstrap),
-        promotion: methodId === 'pix'
+        promotion: methodId === 'pix' || methodId === 'upi'
           ? normalizePromotionCountries(source.promotion, defaults.promotion)
           : normalizeCountryCode(source.promotion, defaults.promotion),
         provider: normalizeCountryCode(source.provider, defaults.provider),
@@ -1020,7 +1021,7 @@
       const saved = paymentCountryChains[methodId] || {};
       const chain = {
         bootstrap: normalizeCountryCode(saved.bootstrap, defaults.bootstrap),
-        promotion: methodId === 'pix'
+        promotion: methodId === 'pix' || methodId === 'upi'
           ? normalizePromotionCountries(saved.promotion, defaults.promotion)
           : normalizeCountryCode(saved.promotion, defaults.promotion),
         provider: normalizeCountryCode(saved.provider, defaults.provider),
@@ -1110,15 +1111,23 @@
       }
       providerCountryInput.readOnly = isManualProxyMethod;
       if (isManualProxyMethod) providerCountryInput.value = bootstrapCountryInput.value.trim().toUpperCase() || providerCountryInput.value;
-      promotionCountryInput.maxLength = 2;
-      promotionCountryInput.pattern = '[A-Za-z]{2}';
-      promotionCountryInput.placeholder = '';
+      if (isUpi) {
+        promotionCountryInput.maxLength = 80;
+        promotionCountryInput.pattern = '[A-Za-z]{2}(\\s*,\\s*[A-Za-z]{2})*';
+        promotionCountryInput.placeholder = 'BR,VN,JP,TR';
+      } else {
+        promotionCountryInput.maxLength = 2;
+        promotionCountryInput.pattern = '[A-Za-z]{2}';
+        promotionCountryInput.placeholder = '';
+      }
       if (isConfigurableChain) {
         document.getElementById('countryChainHint').textContent =
           isPix
             ? 'PIX 固定七步 BR 链路：主 BR 创建 checkout 并首次 init 校验 PIX；第二组 BR 应用优惠和同步税务；返回主 BR 校验 0 元后创建 PIX，最后 confirm、approve、poll。'
             : isTurkeyCard
             ? 'Turkey Card 固定链路：US 创建非 0 Checkout，TR 执行 checkout/update 并通过 TR Stripe Init 校验 0 元 Card 页面。'
+            : isUpi
+            ? 'UPI 链路：IN 创建 checkout 与首次 Stripe init；BR/VN/JP/TR promotion pool 依次 checkout/update；回到 IN Stripe refresh、税务、UPI、confirm 与 approve。'
             : `${paymentLabel}：第一段用于 Checkout 与首次 Stripe init，第二段用于 checkout/update，第三段用于 Stripe refresh、税务、PM、confirm 与 approve。`;
       }
       document.getElementById('batchSizeLabel').textContent = isKakao

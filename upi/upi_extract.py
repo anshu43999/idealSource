@@ -18,7 +18,7 @@
   UPI_CONFIRM_INLINE_PM=0   # 默认按 gpthel 流程：先创建 PM，再 confirm 引用 PM
   UPI_UPDATE_TAX_REGION=1   # IN UPI 流程同步 ChatGPT/Stripe 税务地区
   UPI_BOOTSTRAP_COUNTRY=IN  # Checkout / 首次 Stripe init 地区
-  UPI_PROMOTION_COUNTRY=VN  # checkout/update 地区
+  UPI_PROMOTION_COUNTRY=BR,VN,JP,TR  # checkout/update promotion pool 地区
   UPI_PROVIDER_COUNTRY=IN   # Stripe refresh / 税务 / PM / approve 地区
   UPI_MAX_RETRY=5
   UPI_PROVIDER_PER_CHECKOUT=1
@@ -37,7 +37,7 @@
   UPI_PROXY_REMOVE_AFTER_FAILS=3 # 已复用代理健康类失败累计 3 次移除；普通代理失败 1 次移除
   UPI_ZERO_CACHE=1          # 记录 checkout 的 0 元观察结果，供日志和排查使用
   UPI_ZERO_CACHE_SCHEDULING=0 # 显式设为 1 才按 0 元观察结果筛选/优先调度
-  PP_PROMO_MODE=campaign      # 默认直接走 promo_campaign，避免 coupon 再 fallback 多耗时
+  PP_PROMO_MODE=deferred      # 默认 checkout 不带优惠，由 promotion pool 在 checkout/update 阶段应用
   PP_TRIAL_DAYS=30            # 仅 PP_PROMO_MODE=trial/free_trial 时使用
 """
 
@@ -106,7 +106,12 @@ def configured_countries(name: str, default: str) -> list[str]:
 UPI_BOOTSTRAP_COUNTRY = configured_country(
     "UPI_BOOTSTRAP_COUNTRY", os.environ.get("UPI_CHECKOUT_COUNTRY", "IN")
 )
-UPI_PROMOTION_COUNTRIES = configured_countries("UPI_PROMOTION_COUNTRY", "VN")
+UPI_PROMOTION_ALLOWED_COUNTRIES = ("BR", "VN", "JP", "TR")
+UPI_PROMOTION_COUNTRIES = configured_countries(
+    "UPI_PROMOTION_COUNTRY", ",".join(UPI_PROMOTION_ALLOWED_COUNTRIES)
+)
+if any(country not in UPI_PROMOTION_ALLOWED_COUNTRIES for country in UPI_PROMOTION_COUNTRIES):
+    raise RuntimeError("UPI_PROMOTION_COUNTRY 仅支持 BR,VN,JP,TR")
 UPI_PROMOTION_COUNTRY = UPI_PROMOTION_COUNTRIES[0]
 UPI_PROVIDER_COUNTRY = configured_country(
     "UPI_PROVIDER_COUNTRY", os.environ.get("UPI_BILLING_COUNTRY", "IN")
@@ -1308,7 +1313,7 @@ def checkout_response_has_trial(payload: Any) -> bool:
 
 def create_checkout(chatgpt: requests.Session, country: str) -> dict[str, str]:
     country = normalize_country(country)
-    promo_mode = os.environ.get("PP_PROMO_MODE", "campaign").strip().lower() or "campaign"
+    promo_mode = os.environ.get("PP_PROMO_MODE", "deferred").strip().lower() or "deferred"
     promo_id = os.environ.get("PP_PROMO_ID", "plus-1-month-free").strip()
     body: dict[str, Any] = {
         "entry_point": os.environ.get("PP_ENTRY_POINT", "all_plans_pricing_modal"),
@@ -1407,6 +1412,9 @@ def create_checkout(chatgpt: requests.Session, country: str) -> dict[str, str]:
         "stripe_pk": stripe_pk,
         "billing_country": country,
         "currency": currency_for_country(country),
+        "promo_mode": promo_mode,
+        "promo_id": promo_id if promo_mode != "off" else "",
+        "promo_applied": checkout_response_has_promo(data),
     }
 
 
@@ -1423,8 +1431,9 @@ def update_checkout_promotion(
     checkout: dict[str, str],
     promotion_country: str,
 ) -> None:
-    mode = os.environ.get("PP_PROMO_MODE", "campaign").strip().lower() or "campaign"
+    mode = os.environ.get("PP_PROMO_MODE", "deferred").strip().lower() or "deferred"
     promo_id = os.environ.get("PP_PROMO_ID", "plus-1-month-free").strip() or "plus-1-month-free"
+    checkout_country = normalize_country(checkout.get("billing_country") or UPI_BOOTSTRAP_COUNTRY)
     body: dict[str, Any] = {
         "checkout_session_id": checkout["cs_id"],
         "processor_entity": processor_entity_for_country(
@@ -1434,8 +1443,13 @@ def update_checkout_promotion(
         "plan_name": "chatgptplusplan",
         "price_interval": "month",
         "seat_quantity": 1,
+        "billing_details": {
+            "country": checkout_country,
+            "currency": checkout.get("currency") or currency_for_country(checkout_country),
+        },
+        "checkout_ui_mode": "custom",
     }
-    if mode in {"campaign", "query", "coupon"}:
+    if mode in {"deferred", "campaign", "query", "coupon"}:
         body["promo_campaign"] = {
             "promo_campaign_id": promo_id,
             "is_coupon_from_query_param": mode == "query",
