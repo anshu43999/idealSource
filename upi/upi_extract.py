@@ -106,13 +106,9 @@ def configured_countries(name: str, default: str) -> list[str]:
 UPI_BOOTSTRAP_COUNTRY = configured_country(
     "UPI_BOOTSTRAP_COUNTRY", os.environ.get("UPI_CHECKOUT_COUNTRY", "IN")
 )
-UPI_PROMOTION_ALLOWED_COUNTRIES = ("IN",)
-UPI_PROMOTION_COUNTRIES = configured_countries(
-    "UPI_PROMOTION_COUNTRY", ",".join(UPI_PROMOTION_ALLOWED_COUNTRIES)
-)
-if any(country not in UPI_PROMOTION_ALLOWED_COUNTRIES for country in UPI_PROMOTION_COUNTRIES):
-    raise RuntimeError("UPI_PROMOTION_COUNTRY 仅支持 IN")
-UPI_PROMOTION_COUNTRY = UPI_PROMOTION_COUNTRIES[0]
+_LEGACY_UPI_PROMOTION_COUNTRIES = configured_countries("UPI_PROMOTION_COUNTRY", "IN")
+UPI_PROMOTION_COUNTRIES = ["IN"]
+UPI_PROMOTION_COUNTRY = "IN"
 UPI_PROVIDER_COUNTRY = configured_country(
     "UPI_PROVIDER_COUNTRY", os.environ.get("UPI_BILLING_COUNTRY", "IN")
 )

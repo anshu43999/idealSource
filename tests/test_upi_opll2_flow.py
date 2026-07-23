@@ -54,6 +54,15 @@ class FakeStripe:
         self.headers = {}
 
 
+def test_legacy_promotion_country_env_is_ignored(monkeypatch):
+    monkeypatch.setenv("UPI_PROMOTION_COUNTRY", "VN")
+
+    upi = load_upi_module("upi_extract_legacy_promotion_country")
+
+    assert upi.UPI_PROMOTION_COUNTRY == "IN"
+    assert upi.UPI_PROMOTION_COUNTRIES == ["IN"]
+
+
 def test_create_checkout_uses_initial_campaign_promo(monkeypatch):
     monkeypatch.delenv("PP_PROMO_MODE", raising=False)
     monkeypatch.setenv("PP_PROMO_ID", "plus-1-month-free")

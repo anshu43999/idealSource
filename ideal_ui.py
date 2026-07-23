@@ -912,7 +912,7 @@ def build_environment(
                 "UPI_PROXY_REMOVE_FAILED": "1" if as_bool(payload, "remove_failed", True) else "0",
                 "UPI_REQUIRE_ZERO": "1",
                 "UPI_BOOTSTRAP_COUNTRY": bootstrap_country,
-                "UPI_PROMOTION_COUNTRY": promotion_country,
+                "UPI_PROMOTION_COUNTRY": "IN",
                 "UPI_PROVIDER_COUNTRY": provider_country,
                 "UPI_CHECKOUT_COUNTRY": bootstrap_country,
                 "UPI_BILLING_COUNTRY": provider_country,
