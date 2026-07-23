@@ -46,3 +46,14 @@ git check-ignore proxy_seeds.txt token.txt logs/example.log
 ## License
 
 MIT License，见 [LICENSE](LICENSE)。
+
+## 代理格式
+
+代理池、手动代理池和前置代理输入支持以下格式，运行前会统一规范为带协议的代理 URL：
+
+- `HOST:PORT:USER:PASS`
+- `HOST:PORT@USER:PASS`
+- `USER:PASS:HOST:PORT`
+- `USER:PASS@HOST:PORT`
+
+已带 `http://`、`https://`、`socks5h://` 的代理格式保持兼容。

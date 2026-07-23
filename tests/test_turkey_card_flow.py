@@ -149,7 +149,7 @@ def test_checkout_page_url_prefers_oaics_over_cs_checkout_url():
     assert card.flow.checkout_page_url(checkout_data) == "https://chatgpt.com/checkout/openai_llc/oaics_real_card"
 
 
-def test_oaics_checkout_url_rejects_cs_live_fallback():
+def test_preferred_checkout_url_keeps_cs_live_fallback(monkeypatch):
     checkout_data = checkout()
     checkout_data.update(
         {
@@ -160,12 +160,15 @@ def test_oaics_checkout_url_rejects_cs_live_fallback():
         }
     )
 
-    with pytest.raises(RuntimeError, match="未返回 oaics_ 短链标识"):
-        card.oaics_checkout_url(checkout_data)
+    monkeypatch.setattr(card.flow, "log", lambda *args, **kwargs: None)
+
+    assert card.preferred_checkout_url(checkout_data) == (
+        "https://chatgpt.com/checkout/openai_llc/cs_live_test_card"
+    )
 
 
-def test_oaics_checkout_url_returns_openai_short_url():
-    assert card.oaics_checkout_url(checkout()) == (
+def test_preferred_checkout_url_returns_openai_short_url():
+    assert card.preferred_checkout_url(checkout()) == (
         "https://chatgpt.com/checkout/openai_llc/oaics_test_card"
     )
 

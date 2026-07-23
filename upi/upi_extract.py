@@ -18,7 +18,7 @@
   UPI_CONFIRM_INLINE_PM=0   # 默认按 gpthel 流程：先创建 PM，再 confirm 引用 PM
   UPI_UPDATE_TAX_REGION=1   # IN UPI 流程同步 ChatGPT/Stripe 税务地区
   UPI_BOOTSTRAP_COUNTRY=IN  # Checkout / 首次 Stripe init 地区
-  UPI_PROMOTION_COUNTRY=BR,VN,JP,TR  # checkout/update promotion pool 地区
+  UPI_PROMOTION_COUNTRY=IN  # opll2-style UPI keeps checkout/promotion/provider in IN
   UPI_PROVIDER_COUNTRY=IN   # Stripe refresh / 税务 / PM / approve 地区
   UPI_MAX_RETRY=5
   UPI_PROVIDER_PER_CHECKOUT=1
@@ -37,7 +37,7 @@
   UPI_PROXY_REMOVE_AFTER_FAILS=3 # 已复用代理健康类失败累计 3 次移除；普通代理失败 1 次移除
   UPI_ZERO_CACHE=1          # 记录 checkout 的 0 元观察结果，供日志和排查使用
   UPI_ZERO_CACHE_SCHEDULING=0 # 显式设为 1 才按 0 元观察结果筛选/优先调度
-  PP_PROMO_MODE=deferred      # 默认 checkout 不带优惠，由 promotion pool 在 checkout/update 阶段应用
+  PP_PROMO_MODE=campaign      # opll2-style: checkout 创建时直接携带活动参数
   PP_TRIAL_DAYS=30            # 仅 PP_PROMO_MODE=trial/free_trial 时使用
 """
 
@@ -106,12 +106,12 @@ def configured_countries(name: str, default: str) -> list[str]:
 UPI_BOOTSTRAP_COUNTRY = configured_country(
     "UPI_BOOTSTRAP_COUNTRY", os.environ.get("UPI_CHECKOUT_COUNTRY", "IN")
 )
-UPI_PROMOTION_ALLOWED_COUNTRIES = ("BR", "VN", "JP", "TR")
+UPI_PROMOTION_ALLOWED_COUNTRIES = ("IN",)
 UPI_PROMOTION_COUNTRIES = configured_countries(
     "UPI_PROMOTION_COUNTRY", ",".join(UPI_PROMOTION_ALLOWED_COUNTRIES)
 )
 if any(country not in UPI_PROMOTION_ALLOWED_COUNTRIES for country in UPI_PROMOTION_COUNTRIES):
-    raise RuntimeError("UPI_PROMOTION_COUNTRY 仅支持 BR,VN,JP,TR")
+    raise RuntimeError("UPI_PROMOTION_COUNTRY 仅支持 IN")
 UPI_PROMOTION_COUNTRY = UPI_PROMOTION_COUNTRIES[0]
 UPI_PROVIDER_COUNTRY = configured_country(
     "UPI_PROVIDER_COUNTRY", os.environ.get("UPI_BILLING_COUNTRY", "IN")
@@ -280,12 +280,67 @@ def payment_accept_language() -> str:
     return f"{locale},{locale.split('-', 1)[0]};q=0.9,en;q=0.8"
 
 
+def valid_proxy_port(value: str) -> bool:
+    if not re.fullmatch(r"\d{1,5}", str(value or "")):
+        return False
+    port = int(value)
+    return 1 <= port <= 65535
+
+
+def looks_like_proxy_host(value: str) -> bool:
+    text = str(value or "").strip().lower()
+    return text == "localhost" or "." in text
+
+
+def build_raw_proxy_url(host: str, port: str, username: str = "", password: str = "") -> str:
+    scheme = default_proxy_scheme()
+    if username or password:
+        return f"{scheme}://{username}:{password}@{host}:{port}"
+    return f"{scheme}://{host}:{port}"
+
+
 def normalize_proxy_url(proxy: str) -> str:
     proxy = str(proxy or "").strip()
     if not proxy:
         return ""
     if "://" not in proxy:
-        proxy = f"{default_proxy_scheme()}://{proxy}"
+        if "@" in proxy:
+            left, right = proxy.split("@", 1)
+            left_parts = left.split(":", 1)
+            right_parts = right.rsplit(":", 1)
+            if len(left_parts) == 2 and len(right_parts) == 2:
+                left_name, left_secret_or_port = left_parts
+                right_name, right_secret_or_port = right_parts
+                left_has_port = valid_proxy_port(left_secret_or_port)
+                right_has_port = valid_proxy_port(right_secret_or_port)
+                if left_has_port and (
+                    not right_has_port
+                    or (looks_like_proxy_host(left_name) and not looks_like_proxy_host(right_name))
+                ):
+                    proxy = build_raw_proxy_url(left_name, left_secret_or_port, right_name, right_secret_or_port)
+                elif right_has_port:
+                    proxy = build_raw_proxy_url(right_name, right_secret_or_port, left_name, left_secret_or_port)
+                else:
+                    proxy = f"{default_proxy_scheme()}://{proxy}"
+            else:
+                proxy = f"{default_proxy_scheme()}://{proxy}"
+        else:
+            parts = proxy.split(":", 3)
+            if len(parts) == 4:
+                first, second, third, fourth = parts
+                second_has_port = valid_proxy_port(second)
+                fourth_has_port = valid_proxy_port(fourth)
+                if fourth_has_port and (
+                    not second_has_port
+                    or (looks_like_proxy_host(third) and not looks_like_proxy_host(first))
+                ):
+                    proxy = build_raw_proxy_url(third, fourth, first, second)
+                elif second_has_port:
+                    proxy = build_raw_proxy_url(first, second, third, fourth)
+                else:
+                    proxy = f"{default_proxy_scheme()}://{proxy}"
+            else:
+                proxy = f"{default_proxy_scheme()}://{proxy}"
 
     parsed = urlsplit(proxy)
     if parsed.username is None and parsed.password is None:
@@ -442,9 +497,17 @@ def normalize_pre_proxy_url(proxy: str) -> str:
     proxy = str(proxy or "").strip()
     if not proxy:
         return ""
-    if "://" not in proxy:
-        proxy = f"socks5h://{proxy}"
-    return normalize_proxy_url(proxy)
+    if "://" in proxy:
+        return normalize_proxy_url(proxy)
+    previous_scheme = os.environ.get("UPI_PROXY_DEFAULT_SCHEME")
+    os.environ["UPI_PROXY_DEFAULT_SCHEME"] = "socks5h"
+    try:
+        return normalize_proxy_url(proxy)
+    finally:
+        if previous_scheme is None:
+            os.environ.pop("UPI_PROXY_DEFAULT_SCHEME", None)
+        else:
+            os.environ["UPI_PROXY_DEFAULT_SCHEME"] = previous_scheme
 
 
 def proxy_state_path() -> Path:
@@ -1313,7 +1376,7 @@ def checkout_response_has_trial(payload: Any) -> bool:
 
 def create_checkout(chatgpt: requests.Session, country: str) -> dict[str, str]:
     country = normalize_country(country)
-    promo_mode = os.environ.get("PP_PROMO_MODE", "deferred").strip().lower() or "deferred"
+    promo_mode = os.environ.get("PP_PROMO_MODE", "campaign").strip().lower() or "campaign"
     promo_id = os.environ.get("PP_PROMO_ID", "plus-1-month-free").strip()
     body: dict[str, Any] = {
         "entry_point": os.environ.get("PP_ENTRY_POINT", "all_plans_pricing_modal"),
@@ -1433,7 +1496,7 @@ def update_checkout_promotion(
     checkout: dict[str, str],
     promotion_country: str,
 ) -> None:
-    mode = os.environ.get("PP_PROMO_MODE", "deferred").strip().lower() or "deferred"
+    mode = os.environ.get("PP_PROMO_MODE", "campaign").strip().lower() or "campaign"
     promo_id = os.environ.get("PP_PROMO_ID", "plus-1-month-free").strip() or "plus-1-month-free"
     checkout_country = normalize_country(checkout.get("billing_country") or UPI_BOOTSTRAP_COUNTRY)
     body: dict[str, Any] = {
@@ -2638,44 +2701,18 @@ def run_provider_flow(
     if stop_event and stop_event.is_set():
         raise RuntimeError("任务已停止，跳过本轮")
 
-    hosted_url = ""
-    ctx: dict[str, Any] = {}
-    amount = 0
-    for promotion_index, promotion_country in enumerate(UPI_PROMOTION_COUNTRIES, start=1):
-        current_promotion_proxy = promotion_proxy if manual_proxy_mode_enabled() else proxy_for_country(promotion_proxy, promotion_country)
-        stage_label = f"{promotion_country} checkout/update {promotion_index}/{len(UPI_PROMOTION_COUNTRIES)}"
-        log(f"{stage_label}: proxy={proxy_label(current_promotion_proxy)}")
-        try:
-            promotion_chatgpt = build_chatgpt_session(
-                access_token, device_id, current_promotion_proxy, session_token
-            )
-            update_checkout_promotion(promotion_chatgpt, checkout, promotion_country)
-        except Exception as exc:
-            if is_checkout_not_active_error(exc):
-                raise
-            raise RuntimeError(f"promotion 阶段失败: {exc}") from exc
-        record_proxy_result("promotion", current_promotion_proxy, True, "promotion_update_success")
-
-        log(
-            f"{stage_label} 后通过 {UPI_PROVIDER_COUNTRY} 刷新 Stripe: "
-            f"proxy={proxy_label(provider_proxy)}"
-        )
-        init_payload = stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
-        hosted_url = str(init_payload.get("stripe_hosted_url") or hosted_url or "")
-        ctx, amount = inspect_init(
-            init_payload, f"{promotion_country} 更新后 {UPI_PROVIDER_COUNTRY}"
-        )
-        record_checkout_zero_result(checkout_proxy, checkout_country, amount)
-        if amount == 0:
-            log("Promotion 后金额为 0，继续按 0 元 UPI 流程提取最终支付 URL")
-            break
-        if promotion_index < len(UPI_PROMOTION_COUNTRIES):
-            log(
-                f"{promotion_country} 更新后金额仍非 0，继续下一段 checkout/update",
-                "[WARN] ",
-            )
-            continue
+    log(
+        f"{UPI_PROVIDER_COUNTRY} Provider Stripe init "
+        f"(opll2-style, no checkout/update promotion pool, proxy={proxy_label(provider_proxy)})..."
+    )
+    init_payload = stripe_init(checkout["cs_id"], stripe_pk, provider_proxy)
+    hosted_url = str(init_payload.get("stripe_hosted_url") or "")
+    ctx, amount = inspect_init(init_payload, f"{UPI_PROVIDER_COUNTRY} Provider")
+    record_checkout_zero_result(checkout_proxy, checkout_country, amount)
+    if env_bool("UPI_REQUIRE_ZERO", True) and amount != 0:
         raise RuntimeError(f"0 元优惠未生效，当前金额小单位={amount}，已停止生成非 0 元 UPI 链")
+    if amount == 0:
+        log("Checkout 初始活动金额为 0，继续按 0 元 UPI 流程提取最终支付 URL")
 
     stripe = new_session(provider_proxy)
     stripe.headers.update({"User-Agent": random_user_agent(), "Accept-Language": payment_accept_language()})

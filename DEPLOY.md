@@ -205,3 +205,14 @@ cd /opt/apps/ideal-link-extractor
 git pull  # 或重新上传代码
 docker compose up -d --build
 ```
+
+### 代理输入格式
+
+所有业务线路的代理池、手动代理池和前置代理都支持以下裸格式：
+
+- `HOST:PORT:USER:PASS`
+- `HOST:PORT@USER:PASS`
+- `USER:PASS:HOST:PORT`
+- `USER:PASS@HOST:PORT`
+
+程序会在业务流程开始前统一规范为 `scheme://USER:PASS@HOST:PORT`。未写协议时按页面选择或环境变量里的默认协议补齐。

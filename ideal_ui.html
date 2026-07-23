@@ -697,22 +697,22 @@
             <div class="form-grid">
               <div class="field full" id="proxySeedsField">
                 <label for="proxySeeds">代理 Seed 池</label>
-                <textarea class="proxy-input" id="proxySeeds" name="proxy_seeds" placeholder="粘贴 sticky 代理 seed，每行一条" spellcheck="false" autocomplete="off"></textarea>
+                <textarea class="proxy-input" id="proxySeeds" name="proxy_seeds" placeholder="粘贴 sticky 代理 seed，每行一条；支持 HOST:PORT:USER:PASS / HOST:PORT@USER:PASS / USER:PASS:HOST:PORT / USER:PASS@HOST:PORT" spellcheck="false" autocomplete="off"></textarea>
                 <span class="hint" id="proxySeedsHint">点击启动后保存到 proxy_seeds.txt。每轮只取一个 seed：NL checkout/Stripe init → VN checkout/update → NL Stripe refresh/tax/iDEAL/approve；本次失败的 seed 不会再次抽取。</span>
               </div>
               <div class="field full" id="kakaoKrProxyField" hidden>
                 <label for="kakaoKrProxies">Kakao KR 代理</label>
-                <textarea class="proxy-input" id="kakaoKrProxies" name="manual_primary_proxies" placeholder="每行一条 KR 代理，例如 5652965-c7a22eec:3a9089c8-KR-62301914@gate.kookeey.info:1000" spellcheck="false" autocomplete="off"></textarea>
+                <textarea class="proxy-input" id="kakaoKrProxies" name="manual_primary_proxies" placeholder="每行一条 KR 代理；支持 HOST:PORT:USER:PASS / HOST:PORT@USER:PASS / USER:PASS:HOST:PORT / USER:PASS@HOST:PORT" spellcheck="false" autocomplete="off"></textarea>
                 <span class="hint" id="kakaoKrProxyHint">用于 Kakao 的 checkout、Bootstrap Stripe init、Stripe refresh、taxes、approve。</span>
               </div>
               <div class="field full" id="kakaoVnProxyField" hidden>
                 <label for="kakaoVnProxies">Kakao VN 代理</label>
-                <textarea class="proxy-input" id="kakaoVnProxies" name="manual_promotion_proxies" placeholder="每行一条 VN 代理，例如 5652965-c7a22eec:3a9089c8-VN-62301914@gate.kookeey.info:1000" spellcheck="false" autocomplete="off"></textarea>
+                <textarea class="proxy-input" id="kakaoVnProxies" name="manual_promotion_proxies" placeholder="每行一条 VN 代理；支持 HOST:PORT:USER:PASS / HOST:PORT@USER:PASS / USER:PASS:HOST:PORT / USER:PASS@HOST:PORT" spellcheck="false" autocomplete="off"></textarea>
                 <span class="hint" id="kakaoVnProxyHint">只用于 Kakao 的 checkout/update 阶段，不再自动改写 country/region。</span>
               </div>
               <div class="field full" id="preProxyField">
                 <label for="preProxy">本机前置代理</label>
-                <input id="preProxy" name="pre_proxy" type="text" value="" placeholder="留空直连；可填 127.0.0.1:7897，未写协议默认 socks5h://" spellcheck="false">
+                <input id="preProxy" name="pre_proxy" type="text" value="" placeholder="留空直连；支持 HOST:PORT、HOST:PORT:USER:PASS、HOST:PORT@USER:PASS、USER:PASS:HOST:PORT、USER:PASS@HOST:PORT；未写协议默认 socks5h://" spellcheck="false">
               </div>
               <div class="field">
                 <label for="proxyDefaultScheme">裸代理默认协议</label>
@@ -1156,8 +1156,8 @@
         ? `${paymentLabel} 手动填写 ${chain.bootstrap} / ${chain.promotion} 代理，不再自动改写 country`
         : `只填写 sticky proxy seed，运行时派生 ${chainFlow}`;
       proxySeeds.placeholder = isBLIK
-        ? '粘贴 sticky 代理 seed，每行一条；脚本会自动改写 country/region 为 PL'
-        : `粘贴 sticky 代理 seed，每行一条；脚本会自动改写 country/region 为 ${chain.bootstrap}、${chain.promotion}、${chain.provider}`;
+        ? '粘贴 sticky 代理 seed，每行一条；支持四种裸代理格式，脚本会自动改写 country/region 为 PL'
+        : `粘贴 sticky 代理 seed，每行一条；支持四种裸代理格式，脚本会自动改写 country/region 为 ${chain.bootstrap}、${chain.promotion}、${chain.provider}`;
       document.getElementById('proxySeedsHint').textContent = isBLIK
         ? '点击启动后保存到 BLIK 专用 proxy_seeds.txt。每条 Seed 固定派生：PL checkout → PL Stripe/BLIK → PL approve；本次失败的 Seed 不会再次抽取。'
         : isManualProxyMethod
@@ -1176,8 +1176,8 @@
         ? 'Kakao 手动代理模式下，第一段与第三段必须使用同一国家的代理池'
         : '同一 Seed 贯穿页面设置的三段地区链路';
       if (isManualProxyMethod) {
-        kakaoKrProxies.placeholder = `每行一条 ${chain.bootstrap} 代理，例如 5652965-c7a22eec:3a9089c8-${chain.bootstrap}-62301914@gate.kookeey.info:1000`;
-        kakaoVnProxies.placeholder = `每行一条 ${chain.promotion} 代理，例如 5652965-c7a22eec:3a9089c8-${chain.promotion}-62301914@gate.kookeey.info:1000`;
+        kakaoKrProxies.placeholder = `每行一条 ${chain.bootstrap} 代理；支持 HOST:PORT:USER:PASS / HOST:PORT@USER:PASS / USER:PASS:HOST:PORT / USER:PASS@HOST:PORT`;
+        kakaoVnProxies.placeholder = `每行一条 ${chain.promotion} 代理；支持 HOST:PORT:USER:PASS / HOST:PORT@USER:PASS / USER:PASS:HOST:PORT / USER:PASS@HOST:PORT`;
         document.getElementById('seedCountLabel').textContent = 'KR/VN代理';
         document.querySelector('label[for="kakaoKrProxies"]').textContent = `${chain.bootstrap} 代理`;
         document.querySelector('label[for="kakaoVnProxies"]').textContent = `${chain.promotion} 代理`;

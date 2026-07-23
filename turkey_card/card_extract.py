@@ -213,18 +213,20 @@ def enforce_us_checkout_identity(checkout: dict[str, str]) -> None:
     )
 
 
-def oaics_checkout_url(checkout: dict[str, str]) -> str:
+def preferred_checkout_url(checkout: dict[str, str]) -> str:
     page_id = str(checkout.get("checkout_page_id") or "").strip()
-    if not page_id.startswith("oaics_"):
-        current_id = page_id or str(checkout.get("cs_id") or "unknown")
-        raise RuntimeError(
-            "checkout/update 未返回 oaics_ 短链标识，"
-            f"当前仅有 {current_id}，已跳过该轮并重试"
-        )
-    processor = str(checkout.get("checkout_page_processor") or "openai_llc")
-    if processor != "openai_llc":
-        raise RuntimeError(f"oaics_ 短链 processor 不是 openai_llc: {processor}")
-    return f"https://chatgpt.com/checkout/openai_llc/{page_id}"
+    if page_id.startswith("oaics_"):
+        processor = str(checkout.get("checkout_page_processor") or "openai_llc")
+        if processor != "openai_llc":
+            raise RuntimeError(f"oaics_ 短链 processor 不是 openai_llc: {processor}")
+        return f"https://chatgpt.com/checkout/openai_llc/{page_id}"
+    current_id = page_id or str(checkout.get("cs_id") or "unknown")
+    flow.log(
+        "服务端未返回 custom_checkout_session/oaics_ ID，"
+        f"当前为 {current_id}；保留可用的 OpenAI checkout 长链",
+        "[WARN] ",
+    )
+    return flow.checkout_page_url(checkout)
 
 
 def inspect_card_init(
@@ -303,7 +305,7 @@ def run_manual_card_flow(
     def manual_card_url(payload: dict[str, Any]) -> str:
         del payload
         enforce_us_checkout_identity(checkout)
-        return oaics_checkout_url(checkout)
+        return preferred_checkout_url(checkout)
 
     if stop_event and stop_event.is_set():
         raise RuntimeError("任务已停止，跳过本轮")

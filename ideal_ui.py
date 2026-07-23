@@ -112,7 +112,7 @@ PAYMENT_METHODS: dict[str, dict[str, Any]] = {
     },
     "upi": {
         "label": "UPI",
-        "flow": "IN/BR,VN,JP,TR/IN",
+        "flow": "IN/IN/IN",
         "available": True,
         "script_path": UPI_SCRIPT_PATH,
         "result_marker": "UPI 最终支付 URL:",
@@ -125,7 +125,7 @@ PAYMENT_CHAIN_DEFAULTS: dict[str, tuple[str, str, str]] = {
     "pix": ("BR", "BR", "BR"),
     "kakao_pay": ("KR", "VN", "KR"),
     "twint": ("CH", "VN", "CH"),
-    "upi": ("IN", "BR,VN,JP,TR", "IN"),
+    "upi": ("IN", "IN", "IN"),
 }
 MANUAL_PROXY_METHODS = {"ideal", "turkey_card", "pix", "kakao_pay", "twint", "upi"}
 COUNTRY_CODE_RE = re.compile(r"[A-Z]{2}")
@@ -919,7 +919,7 @@ def build_environment(
                 "UPI_CHECKOUT_PROXY_COUNTRY": bootstrap_country,
                 "UPI_PROVIDER_PROXY_COUNTRIES": provider_country,
                 "UPI_PRE_PROXY": clean_text(payload, "pre_proxy", "", 500),
-                "PP_PROMO_MODE": "deferred",
+                "PP_PROMO_MODE": "campaign",
             }
         )
         env.pop("IDEAL_BLIK_CODE", None)

@@ -147,16 +147,67 @@ def default_proxy_scheme() -> str:
     return "socks5h" if raw in {"socks5", "socks5h"} else "http"
 
 
+def valid_proxy_port(value: str) -> bool:
+    if not re.fullmatch(r"\d{1,5}", str(value or "")):
+        return False
+    port = int(value)
+    return 1 <= port <= 65535
+
+
+def looks_like_proxy_host(value: str) -> bool:
+    text = str(value or "").strip().lower()
+    return text == "localhost" or "." in text
+
+
+def build_raw_proxy_url(host: str, port: str, username: str = "", password: str = "") -> str:
+    scheme = default_proxy_scheme()
+    if username or password:
+        return f"{scheme}://{username}:{password}@{host}:{port}"
+    return f"{scheme}://{host}:{port}"
+
+
 def normalize_proxy_url(raw: str) -> str:
     text = str(raw or "").strip()
     if not text:
         return ""
     if "://" not in text:
-        if text.count(":") == 3 and "@" not in text:
-            host, port, username, password = text.split(":", 3)
-            text = f"{default_proxy_scheme()}://{username}:{password}@{host}:{port}"
+        if "@" in text:
+            left, right = text.split("@", 1)
+            left_parts = left.split(":", 1)
+            right_parts = right.rsplit(":", 1)
+            if len(left_parts) == 2 and len(right_parts) == 2:
+                left_name, left_secret_or_port = left_parts
+                right_name, right_secret_or_port = right_parts
+                left_has_port = valid_proxy_port(left_secret_or_port)
+                right_has_port = valid_proxy_port(right_secret_or_port)
+                if left_has_port and (
+                    not right_has_port
+                    or (looks_like_proxy_host(left_name) and not looks_like_proxy_host(right_name))
+                ):
+                    text = build_raw_proxy_url(left_name, left_secret_or_port, right_name, right_secret_or_port)
+                elif right_has_port:
+                    text = build_raw_proxy_url(right_name, right_secret_or_port, left_name, left_secret_or_port)
+                else:
+                    text = f"{default_proxy_scheme()}://{text}"
+            else:
+                text = f"{default_proxy_scheme()}://{text}"
         else:
-            text = f"{default_proxy_scheme()}://{text}"
+            parts = text.split(":", 3)
+            if len(parts) == 4:
+                first, second, third, fourth = parts
+                second_has_port = valid_proxy_port(second)
+                fourth_has_port = valid_proxy_port(fourth)
+                if fourth_has_port and (
+                    not second_has_port
+                    or (looks_like_proxy_host(third) and not looks_like_proxy_host(first))
+                ):
+                    text = build_raw_proxy_url(third, fourth, first, second)
+                elif second_has_port:
+                    text = build_raw_proxy_url(first, second, third, fourth)
+                else:
+                    text = f"{default_proxy_scheme()}://{text}"
+            else:
+                text = f"{default_proxy_scheme()}://{text}"
     try:
         parsed = urlsplit(text)
         if not parsed.scheme or not parsed.hostname:
@@ -180,9 +231,17 @@ def normalize_pre_proxy_url(proxy: str) -> str:
     proxy = str(proxy or "").strip()
     if not proxy:
         return ""
-    if "://" not in proxy:
-        proxy = f"socks5h://{proxy}"
-    return normalize_proxy_url(proxy)
+    if "://" in proxy:
+        return normalize_proxy_url(proxy)
+    previous_scheme = os.environ.get("KAKAO_PROXY_DEFAULT_SCHEME")
+    os.environ["KAKAO_PROXY_DEFAULT_SCHEME"] = "socks5h"
+    try:
+        return normalize_proxy_url(proxy)
+    finally:
+        if previous_scheme is None:
+            os.environ.pop("KAKAO_PROXY_DEFAULT_SCHEME", None)
+        else:
+            os.environ["KAKAO_PROXY_DEFAULT_SCHEME"] = previous_scheme
 
 
 def pre_proxy_url() -> str:

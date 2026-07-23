@@ -281,12 +281,67 @@ def payment_accept_language() -> str:
     return f"{locale},{locale.split('-', 1)[0]};q=0.9,en;q=0.8"
 
 
+def valid_proxy_port(value: str) -> bool:
+    if not re.fullmatch(r"\d{1,5}", str(value or "")):
+        return False
+    port = int(value)
+    return 1 <= port <= 65535
+
+
+def looks_like_proxy_host(value: str) -> bool:
+    text = str(value or "").strip().lower()
+    return text == "localhost" or "." in text
+
+
+def build_raw_proxy_url(host: str, port: str, username: str = "", password: str = "") -> str:
+    scheme = default_proxy_scheme()
+    if username or password:
+        return f"{scheme}://{username}:{password}@{host}:{port}"
+    return f"{scheme}://{host}:{port}"
+
+
 def normalize_proxy_url(proxy: str) -> str:
     proxy = str(proxy or "").strip()
     if not proxy:
         return ""
     if "://" not in proxy:
-        proxy = f"{default_proxy_scheme()}://{proxy}"
+        if "@" in proxy:
+            left, right = proxy.split("@", 1)
+            left_parts = left.split(":", 1)
+            right_parts = right.rsplit(":", 1)
+            if len(left_parts) == 2 and len(right_parts) == 2:
+                left_name, left_secret_or_port = left_parts
+                right_name, right_secret_or_port = right_parts
+                left_has_port = valid_proxy_port(left_secret_or_port)
+                right_has_port = valid_proxy_port(right_secret_or_port)
+                if left_has_port and (
+                    not right_has_port
+                    or (looks_like_proxy_host(left_name) and not looks_like_proxy_host(right_name))
+                ):
+                    proxy = build_raw_proxy_url(left_name, left_secret_or_port, right_name, right_secret_or_port)
+                elif right_has_port:
+                    proxy = build_raw_proxy_url(right_name, right_secret_or_port, left_name, left_secret_or_port)
+                else:
+                    proxy = f"{default_proxy_scheme()}://{proxy}"
+            else:
+                proxy = f"{default_proxy_scheme()}://{proxy}"
+        else:
+            parts = proxy.split(":", 3)
+            if len(parts) == 4:
+                first, second, third, fourth = parts
+                second_has_port = valid_proxy_port(second)
+                fourth_has_port = valid_proxy_port(fourth)
+                if fourth_has_port and (
+                    not second_has_port
+                    or (looks_like_proxy_host(third) and not looks_like_proxy_host(first))
+                ):
+                    proxy = build_raw_proxy_url(third, fourth, first, second)
+                elif second_has_port:
+                    proxy = build_raw_proxy_url(first, second, third, fourth)
+                else:
+                    proxy = f"{default_proxy_scheme()}://{proxy}"
+            else:
+                proxy = f"{default_proxy_scheme()}://{proxy}"
 
     parsed = urlsplit(proxy)
     if parsed.username is None and parsed.password is None:
@@ -437,9 +492,17 @@ def normalize_pre_proxy_url(proxy: str) -> str:
     proxy = str(proxy or "").strip()
     if not proxy:
         return ""
-    if "://" not in proxy:
-        proxy = f"socks5h://{proxy}"
-    return normalize_proxy_url(proxy)
+    if "://" in proxy:
+        return normalize_proxy_url(proxy)
+    previous_scheme = os.environ.get("IDEAL_PROXY_DEFAULT_SCHEME")
+    os.environ["IDEAL_PROXY_DEFAULT_SCHEME"] = "socks5h"
+    try:
+        return normalize_proxy_url(proxy)
+    finally:
+        if previous_scheme is None:
+            os.environ.pop("IDEAL_PROXY_DEFAULT_SCHEME", None)
+        else:
+            os.environ["IDEAL_PROXY_DEFAULT_SCHEME"] = previous_scheme
 
 
 def proxy_state_path() -> Path:
